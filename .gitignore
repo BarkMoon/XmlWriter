@@ -18,7 +18,6 @@
 *.tmp
 *.vs/
 *.vshost.*
-.vs/
 
 # NuGet Packages
 # 必要なパッケージをソース管理下に置かない一般的な設定
