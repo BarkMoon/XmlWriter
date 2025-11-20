@@ -1,0 +1,47 @@
+## Build Artifacts
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+*.pdb
+*.suo
+*.user
+*.bak
+*.ide
+*.log
+*.ncb
+*.aps
+
+# Visual Studio files
+*.vspscc
+*.vssscc
+*.tmp
+*.vs/
+*.vshost.*
+.vs/
+
+# NuGet Packages
+# 必要なパッケージをソース管理下に置かない一般的な設定
+packages/
+*.nupkg
+/project.lock.json
+
+# ClosedXML Specific (一時ファイルなど、通常は不要)
+# ClosedXMLはバイナリを生成しませんが、念のため
+# ClosedXML_temp/
+
+# User-specific files
+# IDEによるユーザーごとの設定ファイル
+*.userprefs
+*.csproj.user
+
+# Custom Output Directory
+# 今回のツールで生成されるXML出力フォルダ
+Output_XML/
+
+# Database files
+*.mdf
+*.ldf
+
+# Test results
+*.trx
