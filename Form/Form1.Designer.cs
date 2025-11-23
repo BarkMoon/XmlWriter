@@ -102,12 +102,23 @@
             this.cmbSheetName.Name = "cmbSheetName";
             this.cmbSheetName.Size = new System.Drawing.Size(200, 20);
             this.cmbSheetName.TabIndex = 7;
+            //
+            // btnGenerateClass
+            // 
+            this.btnGenerateClass = new System.Windows.Forms.Button();
+            this.btnGenerateClass.Location = new System.Drawing.Point(26, 260); // 位置は適宜調整
+            this.btnGenerateClass.Name = "btnGenerateClass";
+            this.btnGenerateClass.Size = new System.Drawing.Size(439, 40);
+            this.btnGenerateClass.TabIndex = 8;
+            this.btnGenerateClass.Text = "C#クラス定義の生成 (.cs)";
+            this.btnGenerateClass.UseVisualStyleBackColor = true;
+            this.btnGenerateClass.Click += new System.EventHandler(this.btnGenerateClass_Click);
             // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 12F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(500, 260);
+            this.ClientSize = new System.Drawing.Size(500, 320);
             this.Controls.Add(this.cmbSheetName);
             this.Controls.Add(this.lblStatus);
             this.Controls.Add(this.btnGenerate);
@@ -115,6 +126,7 @@
             this.Controls.Add(this.btnBrowse);
             this.Controls.Add(this.txtFilePath);
             this.Controls.Add(this.lblFilePath);
+            this.Controls.Add(this.btnGenerateClass);
             this.Name = "Form1";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "Excel to XML Converter (XmlWriter)";
@@ -132,5 +144,6 @@
         private System.Windows.Forms.Button btnGenerate;
         private System.Windows.Forms.Label lblStatus;
         private System.Windows.Forms.ComboBox cmbSheetName;
+        private System.Windows.Forms.Button btnGenerateClass;
     }
 }
