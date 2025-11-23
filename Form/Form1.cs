@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Windows.Forms;
 using System.Xml.Linq;
@@ -11,49 +12,49 @@ namespace XmlWriter
 {
     public partial class Form1 : Form
     {
-        // ---------------------------------------------------------
-        // テンプレート定義 (外部ファイル化も容易です)
-        // ---------------------------------------------------------
-        private const string ClassTemplate = @"using System;
-using System.Collections.Generic;
-using System.Xml.Serialization;
-
-namespace GeneratedClasses
-{
-    // テーブル: @TableName
-    // このファイルは自動生成されています。
-    // 手動でロジックを追加したい場合は、別ファイルで partial class を定義してください。
-
-@ClassDefinitions
-}
-";
-        // ---------------------------------------------------------
-
         public Form1()
         {
             InitializeComponent();
             cmbSheetName.Enabled = false;
         }
 
-        // (ColumnInfoクラス定義などは前回と同じですが、再掲します)
+        // ---------------------------------------------------------
+        // ★ 変更: 配列フラグ (IsArray) を追加したヘッダー解析クラス
+        // ---------------------------------------------------------
         public class ColumnInfo
         {
             public string OriginalHeader { get; set; }
             public string[] PathParts { get; set; }
             public string PropertyName { get; set; }
             public string TypeName { get; set; }
+            public bool IsArray { get; set; } // ★ 配列かどうか
 
             public ColumnInfo(string header)
             {
                 OriginalHeader = header;
                 string namePart = header;
                 TypeName = "string";
+                IsArray = false;
 
+                // 型情報の分離 ("Name:int[]" -> "Name", "int", IsArray=true)
                 if (header.Contains(":"))
                 {
                     var parts = header.Split(':');
                     namePart = parts[0].Trim();
-                    if (parts.Length > 1) TypeName = parts[1].Trim().ToLower();
+                    if (parts.Length > 1)
+                    {
+                        string typeRaw = parts[1].Trim().ToLower();
+                        // "[]" がついていたら配列扱い
+                        if (typeRaw.EndsWith("[]"))
+                        {
+                            IsArray = true;
+                            TypeName = typeRaw.Replace("[]", ""); // "int[]" -> "int"
+                        }
+                        else
+                        {
+                            TypeName = typeRaw;
+                        }
+                    }
                 }
 
                 PathParts = namePart.Split('.');
@@ -61,7 +62,17 @@ namespace GeneratedClasses
             }
         }
 
-        // --- イベントハンドラ (btnBrowse_Click, LoadTableNames は変更なし) ---
+        // ---------------------------------------------------------
+        // ★ 新規: 読み取り専用でExcelを開くヘルパーメソッド
+        // ---------------------------------------------------------
+        private XLWorkbook OpenWorkbookReadOnly(string path)
+        {
+            // FileShare.ReadWrite を指定することで、Excelがファイルを開いていても読み込めるようにする
+            FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            return new XLWorkbook(fs);
+        }
+
+        // --- イベントハンドラ ---
         private void btnBrowse_Click(object sender, EventArgs e)
         {
             using (OpenFileDialog ofd = new OpenFileDialog())
@@ -81,17 +92,21 @@ namespace GeneratedClasses
             cmbSheetName.Enabled = false;
             try
             {
-                using (var workbook = new XLWorkbook(filePath))
+                // ★ ヘルパーメソッドを使用
+                using (var workbook = OpenWorkbookReadOnly(filePath))
                 {
                     foreach (var ws in workbook.Worksheets)
                         foreach (var tbl in ws.Tables) cmbSheetName.Items.Add(tbl.Name);
                 }
                 if (cmbSheetName.Items.Count > 0) { cmbSheetName.SelectedIndex = 0; cmbSheetName.Enabled = true; }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"読み込みエラー: {ex.Message}\n(パス: {filePath})", "エラー");
+            }
         }
 
-        // --- XML生成 (前回の修正版そのまま) ---
+        // --- XML生成 ---
         private void btnGenerate_Click(object sender, EventArgs e)
         {
             if (string.IsNullOrEmpty(txtFilePath.Text) || cmbSheetName.SelectedItem == null) return;
@@ -110,10 +125,13 @@ namespace GeneratedClasses
             string outputDir = Path.Combine(Path.GetDirectoryName(filePath), "Output_XML", tableName);
             if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
 
-            using (var workbook = new XLWorkbook(filePath))
+            // ★ ヘルパーメソッドを使用
+            using (var workbook = OpenWorkbookReadOnly(filePath))
             {
                 var table = workbook.Table(tableName);
-                var headers = table.HeadersRow().CellsUsed().Select(c => new ColumnInfo(c.GetValue<string>())).ToList();
+                var headers = table.HeadersRow().CellsUsed()
+                    .Select(c => new ColumnInfo(c.GetValue<string>()))
+                    .ToList();
 
                 foreach (var row in table.DataRange.Rows())
                 {
@@ -125,7 +143,7 @@ namespace GeneratedClasses
                     {
                         if (cellIndex >= headers.Count) break;
                         var colInfo = headers[cellIndex];
-                        string val = cell.GetValue<string>();
+                        string rawVal = cell.GetValue<string>();
 
                         XElement targetParent = rootElement;
                         for (int i = 0; i < colInfo.PathParts.Length - 1; i++)
@@ -139,58 +157,66 @@ namespace GeneratedClasses
                             }
                             targetParent = existing;
                         }
-                        targetParent.Add(new XElement(colInfo.PropertyName, val));
 
-                        if (colInfo.PropertyName.Equals("ID", StringComparison.OrdinalIgnoreCase)) idValue = val;
+                        // ★ 変更: 配列対応ロジック
+                        if (colInfo.IsArray)
+                        {
+                            // カンマ区切りで分割（前後の空白除去）
+                            // 空の場合は要素を作らない
+                            if (!string.IsNullOrWhiteSpace(rawVal))
+                            {
+                                var values = rawVal.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                                foreach (var val in values)
+                                {
+                                    targetParent.Add(new XElement(colInfo.PropertyName, val.Trim()));
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // 通常の単一値
+                            targetParent.Add(new XElement(colInfo.PropertyName, rawVal));
+                        }
+
+                        if (colInfo.PropertyName.Equals("ID", StringComparison.OrdinalIgnoreCase)) idValue = rawVal;
                         cellIndex++;
                     }
 
                     if (string.IsNullOrEmpty(idValue)) idValue = row.WorksheetRow().RowNumber().ToString();
-                    long.TryParse(idValue, out long idNum);
-                    string formattedId = (idNum != 0) ? idNum.ToString("D6") : idValue;
+
+                    // IDが数値としてパースできるか確認し、できるなら0埋め、できないならそのまま
+                    string formattedId = idValue;
+                    if (long.TryParse(idValue, out long idNum))
+                    {
+                        formattedId = idNum.ToString("D6");
+                    }
+
                     rootElement.Save(Path.Combine(outputDir, $"{tableName}_{formattedId}.xml"));
                 }
             }
         }
 
-        // --- ★ 修正版 C#クラス生成処理 ---
+        // --- C#クラス生成 ---
         private void btnGenerateClass_Click(object sender, EventArgs e)
         {
-            if (string.IsNullOrEmpty(txtFilePath.Text) || cmbSheetName.SelectedItem == null)
-            {
-                MessageBox.Show("Excelファイルとテーブルを選択してください。");
-                return;
-            }
+            if (string.IsNullOrEmpty(txtFilePath.Text) || cmbSheetName.SelectedItem == null) return;
 
             string tableName = cmbSheetName.SelectedItem.ToString();
-            string templatePath = "Template.cs"; // 実行フォルダのTemplate.csを参照
-
-            if (!File.Exists(templatePath))
-            {
-                MessageBox.Show($"テンプレートファイルが見つかりません。\nパス: {Path.GetFullPath(templatePath)}", "エラー");
-                return;
-            }
-
             try
             {
                 UpdateStatus("クラス生成中...");
+                string templateContent = GetTemplateContent(); // 埋め込みリソースから取得
 
-                // テンプレート読み込み
-                string templateContent = File.ReadAllText(templatePath, Encoding.UTF8);
-
-                using (var workbook = new XLWorkbook(txtFilePath.Text))
+                // ★ ヘルパーメソッドを使用
+                using (var workbook = OpenWorkbookReadOnly(txtFilePath.Text))
                 {
                     var table = workbook.Table(tableName);
-                    // ヘッダー解析
-                    // (ColumnInfoは以前の定義を使用してください)
                     var headers = table.HeadersRow().CellsUsed()
                         .Select(c => new ColumnInfo(c.GetValue<string>()))
                         .ToList();
 
-                    // クラスコードの生成
                     string finalCode = GenerateCSharpFromTemplate(tableName, headers, templateContent);
 
-                    // 保存
                     using (SaveFileDialog sfd = new SaveFileDialog())
                     {
                         sfd.FileName = $"{tableName}.cs";
@@ -204,47 +230,52 @@ namespace GeneratedClasses
                 }
                 UpdateStatus("完了");
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"エラー: {ex.Message}");
-            }
+            catch (Exception ex) { MessageBox.Show($"エラー: {ex.Message}"); }
         }
 
-        // テンプレートに埋め込むロジック
+        // 修正版: 外部ファイル (Template.cs) を読み込む
+        private string GetTemplateContent()
+        {
+            // 実行ファイル(.exe)があるフォルダのパスを取得
+            string exePath = Application.StartupPath;
+
+            // ファイルパスを結合 (例: C:\...\bin\Debug\net8.0-windows\Template.cs)
+            string templatePath = Path.Combine(exePath, "Template.cs");
+
+            if (!File.Exists(templatePath))
+            {
+                throw new FileNotFoundException(
+                    "テンプレートファイルが見つかりません。\n" +
+                    $"以下の場所に 'Template.cs' があるか確認してください。\n{templatePath}");
+            }
+
+            // ファイルを読み込んで返す
+            return File.ReadAllText(templatePath, Encoding.UTF8);
+        }
+
         private string GenerateCSharpFromTemplate(string rootClassName, List<ColumnInfo> columns, string template)
         {
-            // 1. ツリー構築
-            // ルートノードの名前はテーブル名そのまま、Prefixなし
             var rootNode = new ClassNode(rootClassName, rootClassName);
             rootNode.IsRoot = true;
 
             foreach (var col in columns)
             {
-                // パスを追加 (ここでユニークなクラス名が生成される)
-                rootNode.AddPath(col.PathParts, col.TypeName, rootClassName);
+                // ★ 配列情報を渡す
+                rootNode.AddPath(col.PathParts, col.TypeName, col.IsArray, rootClassName);
             }
 
-            // 2. 定義出力
             StringBuilder definitionsSb = new StringBuilder();
             var allClasses = rootNode.GetAllNodes();
-
             foreach (var node in allClasses)
             {
                 definitionsSb.AppendLine(BuildClassCode(node));
-                // クラス間の改行
                 definitionsSb.AppendLine();
             }
 
-            // 最後の余分な改行を削除
-            string definitionsStr = definitionsSb.ToString().TrimEnd();
-
-            // 3. 置換
-            string code = template
+            return template
                 .Replace("@TableName", rootClassName)
                 .Replace("@GeneratedDate", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"))
-                .Replace("@ClassDefinitions", definitionsStr);
-
-            return code;
+                .Replace("@ClassDefinitions", definitionsSb.ToString().TrimEnd());
         }
 
         private string BuildClassCode(ClassNode node)
@@ -252,120 +283,89 @@ namespace GeneratedClasses
             StringBuilder sb = new StringBuilder();
             string indent = "    ";
 
-            // ルート属性
-            if (node.IsRoot)
-            {
-                sb.AppendLine($"{indent}[XmlRoot(\"Record\")]");
-            }
+            if (node.IsRoot) sb.AppendLine($"{indent}[XmlRoot(\"Record\")]");
 
-            // クラス定義 (ClassNameはユニーク化された名前)
             sb.AppendLine($"{indent}public partial class {node.ClassName}");
             sb.AppendLine($"{indent}{{");
 
-            // プロパティ出力
-            // リストを作成して、最後かどうかを判定しやすくする
             var allItems = new List<string>();
-
-            // 1. 通常のプロパティ
             foreach (var prop in node.Properties)
             {
-                string type = ConvertType(prop.TypeName);
+                // ★ 配列かどうかに応じて型を変換
+                string type = ConvertType(prop.TypeName, prop.IsArray);
                 string item = $"{indent}    [XmlElement(\"{prop.Name}\")]\n" +
                               $"{indent}    public {type} {prop.Name} {{ get; set; }}";
                 allItems.Add(item);
             }
-
-            // 2. 子クラス(グループ)プロパティ
             foreach (var child in node.Children)
             {
-                // 型にはユニークな ClassName を使い、プロパティ名には元の XmlTagName (Name) を使う
                 string item = $"{indent}    [XmlElement(\"{child.XmlTagName}\")]\n" +
                               $"{indent}    public {child.ClassName} {child.XmlTagName} {{ get; set; }}";
                 allItems.Add(item);
             }
 
-            // まとめて結合 (間に空行を入れる)
-            if (allItems.Count > 0)
-            {
-                sb.AppendLine(string.Join("\n\n", allItems));
-            }
-
-            // 閉じ括弧 (直前の不要な改行は上記Joinロジックにより排除済)
+            if (allItems.Count > 0) sb.AppendLine(string.Join("\n\n", allItems));
             sb.Append($"{indent}}}");
-
             return sb.ToString();
         }
 
-        private string ConvertType(string typeName)
+        // ★ 変更: IsArray引数を追加し、List<T> を返すように変更
+        private string ConvertType(string typeName, bool isArray)
         {
+            string baseType;
             switch (typeName.ToLower())
             {
-                case "int": return "int";
-                case "long": return "long";
-                case "float": return "float";
-                case "double": return "double";
-                case "bool": return "bool";
-                case "date": case "datetime": return "DateTime";
-                default: return "string";
+                case "int": baseType = "int"; break;
+                case "long": baseType = "long"; break;
+                case "float": baseType = "float"; break;
+                case "double": baseType = "double"; break;
+                case "bool": baseType = "bool"; break;
+                case "date":
+                case "datetime": baseType = "DateTime"; break;
+                default: baseType = "string"; break;
             }
+
+            return isArray ? $"List<{baseType}>" : baseType;
         }
 
         private void UpdateStatus(string msg) { lblStatus.Text = msg; Application.DoEvents(); }
 
-        // --- ★ 修正版 ClassNode (ユニーク名対応) ---
         class ClassNode
         {
-            public string XmlTagName { get; set; } // XMLタグ用 (例: "User")
-            public string ClassName { get; set; }  // C#クラス名用 (例: "Table1_User")
-
+            public string XmlTagName { get; set; }
+            public string ClassName { get; set; }
             public bool IsRoot { get; set; } = false;
-
             public List<PropertyNode> Properties { get; set; } = new List<PropertyNode>();
             public List<ClassNode> Children { get; set; } = new List<ClassNode>();
 
-            public ClassNode(string xmlTagName, string className)
-            {
-                XmlTagName = xmlTagName;
-                ClassName = className;
-            }
+            public ClassNode(string xmlTagName, string className) { XmlTagName = xmlTagName; ClassName = className; }
 
-            // パスを追加する際、親のコンテキスト(prefix)を引き継いでユニーク名を生成
-            public void AddPath(string[] parts, string typeName, string parentPrefix)
+            // ★ 変更: isArray 引数を追加
+            public void AddPath(string[] parts, string typeName, bool isArray, string parentPrefix)
             {
-                // 末尾(プロパティ)の場合
                 if (parts.Length == 1)
                 {
-                    Properties.Add(new PropertyNode { Name = parts[0], TypeName = typeName });
+                    // ★ PropertyNodeに配列情報を保存
+                    Properties.Add(new PropertyNode { Name = parts[0], TypeName = typeName, IsArray = isArray });
                     return;
                 }
 
-                // グループ(子クラス)の場合
                 string currentPartName = parts[0];
-
-                // 既存の子を探す
                 var child = Children.FirstOrDefault(c => c.XmlTagName == currentPartName);
                 if (child == null)
                 {
-                    // ★ ここでユニークな名前を作成
-                    // 例: Parent="Table1", Current="User" -> ClassName="Table1_User"
                     string uniqueClassName = $"{parentPrefix}_{currentPartName}";
-
                     child = new ClassNode(currentPartName, uniqueClassName);
                     Children.Add(child);
                 }
-
-                // 再帰呼び出し (次の階層へPrefixを引き継ぐ)
-                child.AddPath(parts.Skip(1).ToArray(), typeName, child.ClassName);
+                // 子ノードへ進む (子のプロパティ自体はまだ確定していないので isArray はここでは使わないが、末端まで引き回す)
+                child.AddPath(parts.Skip(1).ToArray(), typeName, isArray, child.ClassName);
             }
 
             public List<ClassNode> GetAllNodes()
             {
-                var list = new List<ClassNode>();
-                list.Add(this);
-                foreach (var child in Children)
-                {
-                    list.AddRange(child.GetAllNodes());
-                }
+                var list = new List<ClassNode> { this };
+                foreach (var child in Children) list.AddRange(child.GetAllNodes());
                 return list;
             }
         }
@@ -374,6 +374,7 @@ namespace GeneratedClasses
         {
             public string Name { get; set; }
             public string TypeName { get; set; }
+            public bool IsArray { get; set; } // ★ 追加
         }
     }
 }
