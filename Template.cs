@@ -15,6 +15,23 @@ namespace GeneratedClasses
     public partial class @TableName
     {
 @RootProperties
+
+        public void SetCardData(CardData cardData)
+        {
+            cardData.cardNo = ID;
+            cardData.cardOriginalName = Name.OriginalName;
+            cardData.cardStatus.Clear();
+            cardData.cardProperties.Clear();
+#ForAllSubClasses
+#ForAllSubClassProperties
+#If(#Eq(@SubClassTagName, Status))
+            cardData.card@SubClassTagName.Add("@SubClassPropertyName", @SubClassTagName.@SubClassPropertyName);
+#Elif(#Eq(@SubClassTagName, Property))
+            cardData.card@SubClassTagName.Add("@SubClassPropertyName", @SubClassTagName.@SubClassPropertyName);
+#Endif
+#EndForAllSubClassProperties
+#EndForAllSubClasses
+        }
     }
 
     // ==========================================

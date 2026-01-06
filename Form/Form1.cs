@@ -3,8 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions; // ★追加
 using System.Windows.Forms;
 using System.Xml.Linq;
 
@@ -287,51 +287,52 @@ namespace XmlWriter
             string startTag = "#ForAllSubClasses";
             string endTag = "#EndForAllSubClasses";
 
-            int startIdx = template.IndexOf(startTag);
-            int endIdx = template.IndexOf(endTag);
-
-            if (startIdx == -1 || endIdx == -1 || endIdx < startIdx) return template;
-
-            // ブロックの中身を抽出
-            int contentStart = startIdx + startTag.Length;
-            int contentLength = endIdx - contentStart;
-            string blockTemplate = template.Substring(contentStart, contentLength);
-
-            // ★ 修正1: テンプレートブロック先頭の改行コード(\r\n, \n)を除去
-            // これにより、繰り返しのたびに先頭に空行が入るのを防ぎます
-            if (blockTemplate.StartsWith("\r\n")) blockTemplate = blockTemplate.Substring(2);
-            else if (blockTemplate.StartsWith("\n")) blockTemplate = blockTemplate.Substring(1);
-
-            // ルート以外の全ノード(サブクラス)を取得
-            var subNodes = rootNode.GetAllNodes().Where(n => !n.IsRoot).ToList();
-
-            StringBuilder loopContent = new StringBuilder();
-
-            foreach (var node in subNodes)
+            // マクロブロックを探して処理するループ (複数ブロック対応)
+            while (true)
             {
-                // 1. サブクラス単位の変数を置換
-                string instance = blockTemplate
-                    .Replace("@SubClassName", node.ClassName)
-                    .Replace("@SubClassTagName", node.XmlTagName)
-                    .Replace("@TableName", rootTableName);
+                int startIdx = template.IndexOf(startTag);
+                if (startIdx == -1) break;
 
-                // 2. 内側のプロパティ用マクロを処理
-                instance = ProcessInnerPropertyMacros(instance, node);
+                int endIdx = template.IndexOf(endTag, startIdx);
+                if (endIdx == -1) break; // 閉じタグがない場合は終了
 
-                loopContent.Append(instance);
+                // ブロックの中身を抽出
+                int contentStart = startIdx + startTag.Length;
+                int contentLength = endIdx - contentStart;
+                string blockTemplate = template.Substring(contentStart, contentLength);
+
+                // 先頭の改行除去
+                blockTemplate = TrimStartNewline(blockTemplate);
+
+                var subNodes = rootNode.GetAllNodes().Where(n => !n.IsRoot).ToList();
+                StringBuilder loopContent = new StringBuilder();
+
+                foreach (var node in subNodes)
+                {
+                    // 1. 変数置換
+                    string instance = blockTemplate
+                        .Replace("@SubClassName", node.ClassName)
+                        .Replace("@SubClassTagName", node.XmlTagName)
+                        .Replace("@TableName", rootTableName);
+
+                    // 2. 内側のプロパティマクロを処理
+                    instance = ProcessInnerPropertyMacros(instance, node);
+
+                    // 3. ★新規: 条件分岐マクロを処理 (#Eq -> #If)
+                    instance = ProcessConditionals(instance);
+
+                    loopContent.Append(instance);
+                }
+
+                // 終了タグ後ろの改行除去範囲計算
+                int removeEndIndex = GetRemoveEndIndex(template, endIdx + endTag.Length);
+                int removeLength = removeEndIndex - startIdx;
+
+                // 置換して更新 (次のループで次のブロックを探す)
+                template = template.Remove(startIdx, removeLength).Insert(startIdx, loopContent.ToString());
             }
 
-            // ★ 修正2: #Endタグの後ろにある改行コードも巻き込んで削除範囲を決定
-            // これにより、ブロック終了後の不要な空行を防ぎます
-            int removeEndIndex = endIdx + endTag.Length;
-            if (removeEndIndex < template.Length && template[removeEndIndex] == '\r') removeEndIndex++;
-            if (removeEndIndex < template.Length && template[removeEndIndex] == '\n') removeEndIndex++;
-
-            int removeLength = removeEndIndex - startIdx;
-
-            // 置換実行 (再帰的に複数ブロックがある場合に対応するため、再帰呼び出しまたはループが必要ですが、
-            // 今回の要件では1ブロック想定。複数ブロック対応なら while ループにします)
-            return template.Remove(startIdx, removeLength).Insert(startIdx, loopContent.ToString());
+            return template;
         }
 
         // 内側のループ (#ForAllSubClassProperties) を処理
@@ -340,59 +341,321 @@ namespace XmlWriter
             string startTag = "#ForAllSubClassProperties";
             string endTag = "#EndForAllSubClassProperties";
 
-            int startIdx = template.IndexOf(startTag);
-            int endIdx = template.IndexOf(endTag);
-
-            if (startIdx == -1 || endIdx == -1 || endIdx < startIdx) return template;
-
-            int contentStart = startIdx + startTag.Length;
-            int contentLength = endIdx - contentStart;
-            string blockTemplate = template.Substring(contentStart, contentLength);
-
-            // ★ 修正1: テンプレートブロック先頭の改行コードを除去
-            if (blockTemplate.StartsWith("\r\n")) blockTemplate = blockTemplate.Substring(2);
-            else if (blockTemplate.StartsWith("\n")) blockTemplate = blockTemplate.Substring(1);
-
-            StringBuilder loopContent = new StringBuilder();
-
-            // プロパティと子クラスを統合リストとして扱う
-            var allProperties = new List<dynamic>();
-
-            foreach (var prop in node.Properties)
+            while (true)
             {
-                allProperties.Add(new
+                int startIdx = template.IndexOf(startTag);
+                if (startIdx == -1) break;
+
+                int endIdx = template.IndexOf(endTag, startIdx);
+                if (endIdx == -1) break;
+
+                int contentStart = startIdx + startTag.Length;
+                int contentLength = endIdx - contentStart;
+                string blockTemplate = template.Substring(contentStart, contentLength);
+
+                blockTemplate = TrimStartNewline(blockTemplate);
+
+                StringBuilder loopContent = new StringBuilder();
+
+                // プロパティと子クラスを統合リストとして扱う
+                var allProperties = new List<dynamic>();
+                foreach (var prop in node.Properties)
+                    allProperties.Add(new { Name = prop.Name, Type = ConvertType(prop.TypeName, prop.IsArray) });
+                foreach (var child in node.Children)
+                    allProperties.Add(new { Name = child.XmlTagName, Type = child.ClassName });
+
+                foreach (var prop in allProperties)
                 {
-                    Name = prop.Name,
-                    Type = ConvertType(prop.TypeName, prop.IsArray)
-                });
+                    // 1. 変数置換
+                    string instance = blockTemplate
+                        .Replace("@SubClassPropertyName", prop.Name)
+                        .Replace("@SubClassPropertyType", prop.Type);
+
+                    // 2. ★新規: 条件分岐マクロを処理 (#Eq -> #If)
+                    // 変数置換後の文字列に対して評価を行う
+                    instance = ProcessConditionals(instance);
+
+                    loopContent.Append(instance);
+                }
+
+                int removeEndIndex = GetRemoveEndIndex(template, endIdx + endTag.Length);
+                int removeLength = removeEndIndex - startIdx;
+
+                template = template.Remove(startIdx, removeLength).Insert(startIdx, loopContent.ToString());
             }
 
-            foreach (var child in node.Children)
+            return template;
+        }
+
+        // ---------------------------------------------------------
+        // ★新規: 条件分岐処理エンジン
+        // ---------------------------------------------------------
+
+        private string ProcessConditionals(string text)
+        {
+            // 1. #Eq(A, B) を True/False に置換
+            text = ProcessEqMacros(text);
+
+            // 2. #If ... #Endif を構造解析して置換 (再帰的に処理)
+            return ProcessIfBlocks(text);
+        }
+
+        // #Eq(A, B) の処理 (強化版)
+        private string ProcessEqMacros(string text)
+        {
+            // 正規表現: #Eq(引数1, 引数2)
+            // \s* を追加して、括弧の前後のスペースやカンマ後のスペースを許容する
+            return Regex.Replace(text, @"#Eq\s*\(([^,]+),\s*([^)]+)\)", match =>
             {
-                allProperties.Add(new
+                string arg1 = match.Groups[1].Value.Trim();
+                string arg2 = match.Groups[2].Value.Trim();
+                // 文字列一致判定 (Case Sensitive)
+                return (arg1 == arg2) ? "True" : "False";
+            });
+        }
+
+        // #If ブロックの処理 (ネスト対応・構造解析)
+        private string ProcessIfBlocks(string text)
+        {
+            // 再帰的に処理するため、最も外側の #If を探す
+            while (true)
+            {
+                int ifIndex = text.IndexOf("#If");
+                if (ifIndex == -1) break; // もう #If はない
+
+                // 対応する #Endif を探す (ネストを考慮)
+                int endIndex = FindMatchingEndif(text, ifIndex);
+                if (endIndex == -1) break; // 閉じタグが見つからない(異常系)
+
+                // #If(...) ～ #Endif 全体を切り出す
+                int length = (endIndex + "#Endif".Length) - ifIndex;
+
+                // 行末の改行まで含めて削除範囲とする
+                int removeEndIndex = GetRemoveEndIndex(text, ifIndex + length);
+                int fullRemoveLength = removeEndIndex - ifIndex;
+
+                // ブロックの中身を解析して、採用するテキストを決定
+                string result = SolveIfBlock(text.Substring(ifIndex, length));
+
+                // 結果の中にさらに #If があるかもしれないので再帰処理しないといけないが、
+                // 今回はシンプルに「採用されたテキスト」を元の場所に埋め込んで、
+                // whileループの次周で再度検索させることで解決する。
+                // (埋め込んだテキスト内に #If があれば次に見つかる)
+
+                text = text.Remove(ifIndex, fullRemoveLength).Insert(ifIndex, result);
+            }
+
+            return text;
+        }
+
+        // 特定の #If ブロックを解析し、条件に合う部分のテキストを返す
+        private string SolveIfBlock(string block)
+        {
+            // ブロックは "#If(Cond)...#Endif" の形
+            // これを行単位などでパースして、If, Elif, Else の区間を見つける
+            // ただし、ネストされた #If があると単純な Split はできない。
+
+            // 簡易パーサー: トップレベルの #If, #Elif, #Else を探す
+            var segments = ParseIfSegments(block);
+
+            foreach (var seg in segments)
+            {
+                // Else は無条件で採用
+                if (seg.Type == "Else")
                 {
-                    Name = child.XmlTagName,
-                    Type = child.ClassName
-                });
+                    return TrimStartNewline(seg.Content); // 改行調整
+                }
+
+                // If, Elif は条件判定
+                if (seg.Condition == "True")
+                {
+                    return TrimStartNewline(seg.Content); // 改行調整
+                }
             }
 
-            foreach (var prop in allProperties)
+            return ""; // どの条件にも合致せずElseもない場合
+        }
+
+        private class IfSegment
+        {
+            public string Type; // If, Elif, Else
+            public string Condition; // True, False
+            public string Content;
+        }
+
+        // ブロックをセグメント(If, Elif, Else)に分解する修正版
+        private List<IfSegment> ParseIfSegments(string block)
+        {
+            var list = new List<IfSegment>();
+
+            using (StringReader sr = new StringReader(block))
             {
-                string instance = blockTemplate
-                    .Replace("@SubClassPropertyName", prop.Name)
-                    .Replace("@SubClassPropertyType", prop.Type);
+                string line;
+                string currentType = null;
+                string currentCond = null;
+                StringBuilder currentContent = new StringBuilder();
 
-                loopContent.Append(instance);
+                // depth: ネストの深さ
+                // 0: ブロックの外
+                // 1: 現在処理中の #If ブロックの直下 (ここにある #Elif/#Else が有効)
+                // 2以上: さらにネストされた #If の内部
+                int depth = 0;
+
+                while ((line = sr.ReadLine()) != null)
+                {
+                    string trimmed = line.Trim();
+
+                    // 1. #If (開始タグ)
+                    if (trimmed.StartsWith("#If"))
+                    {
+                        if (depth == 0)
+                        {
+                            // トップレベルの開始
+                            currentType = "If";
+                            currentContent.Clear();
+                            currentCond = ExtractCondition(trimmed);
+                        }
+                        else
+                        {
+                            // ネストされた #If はコンテンツとして扱う
+                            currentContent.AppendLine(line);
+                        }
+                        depth++;
+                        continue;
+                    }
+
+                    // 2. #Endif (終了タグ)
+                    if (trimmed.StartsWith("#Endif"))
+                    {
+                        depth--;
+                        if (depth == 0)
+                        {
+                            // トップレベルの終了。現在のセグメントを保存して終了
+                            if (currentType != null)
+                            {
+                                list.Add(new IfSegment { Type = currentType, Condition = currentCond, Content = currentContent.ToString() });
+                            }
+                            currentType = null;
+                        }
+                        else
+                        {
+                            // ネストされた #Endif はコンテンツとして扱う
+                            currentContent.AppendLine(line);
+                        }
+                        continue;
+                    }
+
+                    // 3. #Elif / #Else (中間分岐タグ)
+                    // depth == 1 のときのみ、分岐として認識する
+                    if (depth == 1)
+                    {
+                        if (trimmed.StartsWith("#Elif"))
+                        {
+                            // 前のセグメントを保存
+                            if (currentType != null)
+                            {
+                                list.Add(new IfSegment { Type = currentType, Condition = currentCond, Content = currentContent.ToString() });
+                            }
+                            // 新しいセグメント開始
+                            currentType = "Elif";
+                            currentContent.Clear();
+                            currentCond = ExtractCondition(trimmed);
+                            continue;
+                        }
+
+                        if (trimmed.StartsWith("#Else"))
+                        {
+                            // 前のセグメントを保存
+                            if (currentType != null)
+                            {
+                                list.Add(new IfSegment { Type = currentType, Condition = currentCond, Content = currentContent.ToString() });
+                            }
+                            // 新しいセグメント開始
+                            currentType = "Else";
+                            currentContent.Clear();
+                            currentCond = "True"; // Elseは常にTrue
+                            continue;
+                        }
+                    }
+
+                    // 4. 通常のコンテンツ
+                    // セグメントが確定している場合のみ追加
+                    if (currentType != null)
+                    {
+                        currentContent.AppendLine(line);
+                    }
+                }
             }
+            return list;
+        }
 
-            // ★ 修正2: #Endタグの後ろにある改行コードも巻き込んで削除範囲を決定
-            int removeEndIndex = endIdx + endTag.Length;
-            if (removeEndIndex < template.Length && template[removeEndIndex] == '\r') removeEndIndex++;
-            if (removeEndIndex < template.Length && template[removeEndIndex] == '\n') removeEndIndex++;
+        private string ExtractCondition(string line)
+        {
+            // #If(True) -> True
+            int start = line.IndexOf('(');
+            int end = line.LastIndexOf(')');
+            if (start != -1 && end != -1)
+            {
+                return line.Substring(start + 1, end - start - 1).Trim();
+            }
+            return "False";
+        }
 
-            int removeLength = removeEndIndex - startIdx;
+        private int FindMatchingEndif(string text, int startIfIndex)
+        {
+            int depth = 0;
+            int pos = startIfIndex;
 
-            return template.Remove(startIdx, removeLength).Insert(startIdx, loopContent.ToString());
+            while (pos < text.Length)
+            {
+                int nextIf = text.IndexOf("#If", pos);
+                int nextEnd = text.IndexOf("#Endif", pos);
+
+                if (nextEnd == -1) return -1; // Endifがない
+
+                // 次に近いのが If か Endif か
+                if (nextIf != -1 && nextIf < nextEnd)
+                {
+                    // ネストしたIfが見つかった
+                    depth++;
+                    pos = nextIf + 3; // 進める
+                }
+                else
+                {
+                    // Endifが見つかった
+                    depth--;
+                    pos = nextEnd + 6; // 進める
+
+                    if (depth == 0)
+                    {
+                        return nextEnd; // これが対応するEndif
+                    }
+                }
+            }
+            return -1;
+        }
+
+
+        // ---------------------------------------------------------
+        // ユーティリティ (改行処理)
+        // ---------------------------------------------------------
+
+        // 先頭の改行を除去
+        private string TrimStartNewline(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            if (text.StartsWith("\r\n")) return text.Substring(2);
+            if (text.StartsWith("\n")) return text.Substring(1);
+            return text;
+        }
+
+        // 末尾の改行を含めた削除位置を計算
+        private int GetRemoveEndIndex(string fullText, int indexAfterTag)
+        {
+            int idx = indexAfterTag;
+            if (idx < fullText.Length && fullText[idx] == '\r') idx++;
+            if (idx < fullText.Length && fullText[idx] == '\n') idx++;
+            return idx;
         }
 
         // パターンA: プロパティ定義のみを生成する (ルートクラスの中身用)
