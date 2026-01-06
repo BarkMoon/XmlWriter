@@ -255,6 +255,7 @@ namespace XmlWriter
 
         private string GenerateCSharpFromTemplate(string rootClassName, List<ColumnInfo> columns, string template)
         {
+            // 1. ツリー構築
             var rootNode = new ClassNode(rootClassName, rootClassName);
             rootNode.IsRoot = true;
 
@@ -263,53 +264,77 @@ namespace XmlWriter
                 rootNode.AddPath(col.PathParts, col.TypeName, col.IsArray, rootClassName);
             }
 
-            StringBuilder definitionsSb = new StringBuilder();
-            var allClasses = rootNode.GetAllNodes();
-            foreach (var node in allClasses)
+            // 2. コード生成
+            // (A) ルートクラス用: プロパティ定義のみ生成 (インデント深め: 8スペース想定)
+            string rootPropertiesCode = BuildPropertiesCodeOnly(rootNode, "        ");
+
+            // (B) サブクラス用: クラス定義全体を生成 (インデント浅め: 4スペース想定)
+            StringBuilder subClassesSb = new StringBuilder();
+            // ルート以外の全ノードを取得（ルート自身は除外するロジックが必要）
+            var allNodes = rootNode.GetAllNodes();
+
+            foreach (var node in allNodes)
             {
-                definitionsSb.AppendLine(BuildClassCode(node));
-                definitionsSb.AppendLine();
+                if (node.IsRoot) continue; // ルートのクラス定義はテンプレートにあるのでスキップ
+
+                subClassesSb.AppendLine(BuildFullClassCode(node, "    "));
+                subClassesSb.AppendLine();
             }
 
-            // プレースホルダーの置換
+            // 3. 置換と改行コード統一
             string code = template
                 .Replace("@TableName", rootClassName)
                 .Replace("@GeneratedDate", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"))
-                .Replace("@ClassDefinitions", definitionsSb.ToString().TrimEnd());
+                .Replace("@RootProperties", rootPropertiesCode.TrimEnd()) // 末尾の改行除去
+                .Replace("@SubClasses", subClassesSb.ToString().TrimEnd());
 
-            // ★ 修正: 改行コードを Windows (CR+LF) に統一する処理
-            // 1. 一旦すべての改行(\r\n)を \n に置換して LF に統一
-            // 2. その後、すべての \n を \r\n (CR+LF) に置換
+            // CR+LF に統一
             return code.Replace("\r\n", "\n").Replace("\n", "\r\n");
         }
 
-        private string BuildClassCode(ClassNode node)
+        // パターンA: プロパティ定義のみを生成する (ルートクラスの中身用)
+        private string BuildPropertiesCodeOnly(ClassNode node, string indent)
         {
-            StringBuilder sb = new StringBuilder();
-            string indent = "    ";
-
-            if (node.IsRoot) sb.AppendLine($"{indent}[XmlRoot(\"Record\")]");
-
-            sb.AppendLine($"{indent}public partial class {node.ClassName}");
-            sb.AppendLine($"{indent}{{");
-
             var allItems = new List<string>();
+
+            // 通常プロパティ
             foreach (var prop in node.Properties)
             {
-                // ★ 配列かどうかに応じて型を変換
                 string type = ConvertType(prop.TypeName, prop.IsArray);
-                string item = $"{indent}    [XmlElement(\"{prop.Name}\")]\n" +
-                              $"{indent}    public {type} {prop.Name} {{ get; set; }}";
-                allItems.Add(item);
-            }
-            foreach (var child in node.Children)
-            {
-                string item = $"{indent}    [XmlElement(\"{child.XmlTagName}\")]\n" +
-                              $"{indent}    public {child.ClassName} {child.XmlTagName} {{ get; set; }}";
+                string item = $"{indent}[XmlElement(\"{prop.Name}\")]\n" +
+                              $"{indent}public {type} {prop.Name} {{ get; set; }}";
                 allItems.Add(item);
             }
 
-            if (allItems.Count > 0) sb.AppendLine(string.Join("\n\n", allItems));
+            // 子クラス(グループ)への参照プロパティ
+            foreach (var child in node.Children)
+            {
+                string item = $"{indent}[XmlElement(\"{child.XmlTagName}\")]\n" +
+                              $"{indent}public {child.ClassName} {child.XmlTagName} {{ get; set; }}";
+                allItems.Add(item);
+            }
+
+            return string.Join("\n\n", allItems);
+        }
+
+        // パターンB: クラス定義全体を生成する (サブクラス用)
+        private string BuildFullClassCode(ClassNode node, string indent)
+        {
+            StringBuilder sb = new StringBuilder();
+
+            // サブクラス定義 (partial削除)
+            sb.AppendLine($"{indent}public class {node.ClassName}");
+            sb.AppendLine($"{indent}{{");
+
+            // 中身は パターンA のロジックを再利用 (インデントを深くして呼ぶ)
+            string innerIndent = indent + "    ";
+            string properties = BuildPropertiesCodeOnly(node, innerIndent);
+
+            if (!string.IsNullOrEmpty(properties))
+            {
+                sb.AppendLine(properties);
+            }
+
             sb.Append($"{indent}}}");
             return sb.ToString();
         }
