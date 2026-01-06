@@ -260,7 +260,6 @@ namespace XmlWriter
 
             foreach (var col in columns)
             {
-                // ★ 配列情報を渡す
                 rootNode.AddPath(col.PathParts, col.TypeName, col.IsArray, rootClassName);
             }
 
@@ -272,10 +271,16 @@ namespace XmlWriter
                 definitionsSb.AppendLine();
             }
 
-            return template
+            // プレースホルダーの置換
+            string code = template
                 .Replace("@TableName", rootClassName)
                 .Replace("@GeneratedDate", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"))
                 .Replace("@ClassDefinitions", definitionsSb.ToString().TrimEnd());
+
+            // ★ 修正: 改行コードを Windows (CR+LF) に統一する処理
+            // 1. 一旦すべての改行(\r\n)を \n に置換して LF に統一
+            // 2. その後、すべての \n を \r\n (CR+LF) に置換
+            return code.Replace("\r\n", "\n").Replace("\n", "\r\n");
         }
 
         private string BuildClassCode(ClassNode node)
