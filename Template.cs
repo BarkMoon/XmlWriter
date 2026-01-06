@@ -16,6 +16,7 @@ namespace GeneratedClasses
     {
 @RootProperties
 
+#If(#Contains(@TableName, CardData))
         public void SetCardData(CardData cardData)
         {
             cardData.cardNo = ID;
@@ -24,12 +25,11 @@ namespace GeneratedClasses
             cardData.cardProperties.Clear();
 #ForAllSubClasses
 #ForAllSubClassProperties
-#If(#Or(#Eq(@SubClassTagName, Status), #Eq(@SubClassTagName, Property)))
+#If(#Or(#Eq(@SubClassTagName, Status), #Eq(@SubClassTagName, Properties)))
             cardData.card@SubClassTagName.Add("@SubClassPropertyName", @SubClassTagName.@SubClassPropertyName);
 #Endif
 #EndForAllSubClassProperties
 #EndForAllSubClasses
-#If(#Contains(@TableName, CardData))
             cardData.cardDataCollectionName = "#Replace(@TableName, CardData, CardDataCollection)";
 #Endif
         }
