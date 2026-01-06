@@ -19,7 +19,7 @@ namespace GeneratedClasses
 #If(#Contains(@TableName, CardData))
         public void SetCardData(CardData cardData)
         {
-            cardData.cardNo = ID;
+            cardData.cardNo = Id;
             cardData.cardOriginalName = Name.OriginalName;
             cardData.cardStatus.Clear();
             cardData.cardProperties.Clear();
