@@ -24,13 +24,14 @@ namespace GeneratedClasses
             cardData.cardProperties.Clear();
 #ForAllSubClasses
 #ForAllSubClassProperties
-#If(#Eq(@SubClassTagName, Status))
-            cardData.card@SubClassTagName.Add("@SubClassPropertyName", @SubClassTagName.@SubClassPropertyName);
-#Elif(#Eq(@SubClassTagName, Property))
+#If(#Or(#Eq(@SubClassTagName, Status), #Eq(@SubClassTagName, Property)))
             cardData.card@SubClassTagName.Add("@SubClassPropertyName", @SubClassTagName.@SubClassPropertyName);
 #Endif
 #EndForAllSubClassProperties
 #EndForAllSubClasses
+#If(#Contains(@TableName, CardData))
+            cardData.cardDataCollectionName = "#Replace(@TableName, CardData, CardDataCollection)";
+#Endif
         }
     }
 

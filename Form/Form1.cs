@@ -265,19 +265,26 @@ namespace XmlWriter
             }
 
             // 2. マクロブロック (#ForAllSubClasses) の処理
-            // ここで内部のプロパティマクロも再帰的に処理されます
+            // ここでループ内部のマクロは処理されます
             string processedTemplate = ProcessTemplateMacros(template, rootNode, rootClassName);
 
-            // 3. ルートクラスのプロパティ生成 (ルート側はまだ旧方式のままですが、整合性は取れます)
+            // 3. ルートクラスのプロパティ生成
             string rootPropertiesCode = BuildPropertiesCodeOnly(rootNode, "        ");
 
-            // 4. 残りのグローバル置換
+            // 4. グローバル変数の置換
+            // ★重要: 変数(@TableNameなど)を実際の値に置き換えます。
+            // これにより #Contains(@TableName, ...) が #Contains(CardData_Hanafuda, ...) になります。
             string finalCode = processedTemplate
                 .Replace("@TableName", rootClassName)
                 .Replace("@GeneratedDate", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"))
                 .Replace("@RootProperties", rootPropertiesCode.TrimEnd());
 
-            // 改行コード統一 (CR+LF)
+            // 5. ★新規追加: 最終的なマクロ一括処理
+            // これにより、ループの外側にあった #If や #Replace が解決されます。
+            // 変数置換の後に行うことで、置換後の文字列に対して判定・加工が機能します。
+            finalCode = ProcessConditionals(finalCode);
+
+            // 6. 改行コード統一 (CR+LF)
             return finalCode.Replace("\r\n", "\n").Replace("\n", "\r\n");
         }
 
@@ -388,30 +395,109 @@ namespace XmlWriter
         }
 
         // ---------------------------------------------------------
-        // ★新規: 条件分岐処理エンジン
+        // 条件分岐処理エンジン (修正版)
         // ---------------------------------------------------------
 
         private string ProcessConditionals(string text)
         {
-            // 1. #Eq(A, B) を True/False に置換
-            text = ProcessEqMacros(text);
+            // 1. ★新規: 式マクロ (#Eq, #Not, #And, #Or, #Contains, #Replace) を一括解決
+            // ネストに対応するため、ループ処理を行うメソッドを呼び出す
+            text = ProcessExpressionMacros(text);
 
-            // 2. #If ... #Endif を構造解析して置換 (再帰的に処理)
+            // 2. #If ... #Endif を構造解析して置換
             return ProcessIfBlocks(text);
         }
 
-        // #Eq(A, B) の処理 (強化版)
-        private string ProcessEqMacros(string text)
+        // 式マクロを再帰的に解決するメソッド
+        private string ProcessExpressionMacros(string text)
         {
-            // 正規表現: #Eq(引数1, 引数2)
-            // \s* を追加して、括弧の前後のスペースやカンマ後のスペースを許容する
-            return Regex.Replace(text, @"#Eq\s*\(([^,]+),\s*([^)]+)\)", match =>
+            // 処理対象のマクロ名リスト
+            var targetMacros = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                string arg1 = match.Groups[1].Value.Trim();
-                string arg2 = match.Groups[2].Value.Trim();
-                // 文字列一致判定 (Case Sensitive)
-                return (arg1 == arg2) ? "True" : "False";
-            });
+                "Eq", "Not", "And", "Or", "Contains", "Replace"
+            };
+
+            // 正規表現: #MacroName(Args...) 
+            // [^()]* とすることで、「括弧を含まない引数」つまり「最も内側のマクロ」にマッチさせる
+            var regex = new Regex(@"#(\w+)\s*\(([^()]*)\)");
+
+            bool changed = true;
+
+            // ネストが解消されるまでループ置換 (例: #Not(#Eq(A,B)) -> #Not(True) -> False)
+            while (changed)
+            {
+                changed = false;
+                text = regex.Replace(text, match =>
+                {
+                    string macroName = match.Groups[1].Value;
+                    string argsStr = match.Groups[2].Value;
+
+                    // 対象外のマクロ（#Ifなど）は触らずそのまま返す
+                    if (!targetMacros.Contains(macroName))
+                    {
+                        return match.Value;
+                    }
+
+                    // マクロを評価して結果文字列を取得
+                    string result = EvaluateMacro(macroName, argsStr);
+
+                    // 結果が変わっていればフラグを立てる
+                    if (result != match.Value)
+                    {
+                        changed = true;
+                        return result;
+                    }
+                    return match.Value;
+                });
+            }
+            return text;
+        }
+
+        // 個別のマクロロジックを実行するメソッド
+        private string EvaluateMacro(string name, string argsStr)
+        {
+            // 引数をカンマで分割してトリム
+            // ※引数としての文字列内にカンマが含まれるケースは考慮しない簡易実装
+            var args = argsStr.Split(',').Select(a => a.Trim()).ToArray();
+
+            switch (name.ToLower()) // 小文字で判定
+            {
+                // --- 比較・論理 ---
+                case "eq":
+                    if (args.Length < 2) return "False";
+                    return (args[0] == args[1]) ? "True" : "False";
+
+                case "not":
+                    if (args.Length < 1) return "False";
+                    // TrueならFalse, それ以外ならTrue
+                    return (args[0].Equals("True", StringComparison.OrdinalIgnoreCase)) ? "False" : "True";
+
+                case "and":
+                    // 引数がすべてTrueならTrue
+                    if (args.Length == 0) return "False";
+                    bool andResult = args.All(a => a.Equals("True", StringComparison.OrdinalIgnoreCase));
+                    return andResult ? "True" : "False";
+
+                case "or":
+                    // 引数のどれかがTrueならTrue
+                    if (args.Length == 0) return "False";
+                    bool orResult = args.Any(a => a.Equals("True", StringComparison.OrdinalIgnoreCase));
+                    return orResult ? "True" : "False";
+
+                // --- 文字列操作 ---
+                case "contains":
+                    if (args.Length < 2) return "False";
+                    return args[0].Contains(args[1]) ? "True" : "False";
+
+                case "replace":
+                    // #Replace(Source, Old, New)
+                    if (args.Length < 3) return args.Length > 0 ? args[0] : "";
+                    return args[0].Replace(args[1], args[2]);
+
+                default:
+                    // 未知のマクロはそのまま返す（通常ここには来ない）
+                    return $"#{name}({argsStr})";
+            }
         }
 
         // #If ブロックの処理 (ネスト対応・構造解析)
