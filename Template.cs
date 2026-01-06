@@ -18,7 +18,7 @@ namespace GeneratedClasses
     }
 
     // ==========================================
-    // サブクラス定義 (マクロによる繰り返し生成)
+    // サブクラス定義 (二重マクロによる生成)
     // ==========================================
 #ForAllSubClasses
     /// <summary>
@@ -26,7 +26,11 @@ namespace GeneratedClasses
     /// </summary>
     public partial class @SubClassName
     {
-@SubClassProperties
+        // プロパティの繰り返し定義
+#ForAllSubClassProperties
+        [XmlElement("@SubClassPropertyName")]
+        public @SubClassPropertyType @SubClassPropertyName { get; set; }
+#EndForAllSubClassProperties
     }
 #EndForAllSubClasses
 }

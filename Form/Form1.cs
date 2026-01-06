@@ -265,9 +265,10 @@ namespace XmlWriter
             }
 
             // 2. マクロブロック (#ForAllSubClasses) の処理
+            // ここで内部のプロパティマクロも再帰的に処理されます
             string processedTemplate = ProcessTemplateMacros(template, rootNode, rootClassName);
 
-            // 3. ルートクラスのプロパティ生成 (インデント 8スペース)
+            // 3. ルートクラスのプロパティ生成 (ルート側はまだ旧方式のままですが、整合性は取れます)
             string rootPropertiesCode = BuildPropertiesCodeOnly(rootNode, "        ");
 
             // 4. 残りのグローバル置換
@@ -280,7 +281,7 @@ namespace XmlWriter
             return finalCode.Replace("\r\n", "\n").Replace("\n", "\r\n");
         }
 
-        // ★ 新規: マクロブロックの解析と展開を行うメソッド
+        // 外側のループ (#ForAllSubClasses) を処理
         private string ProcessTemplateMacros(string template, ClassNode rootNode, string rootTableName)
         {
             string startTag = "#ForAllSubClasses";
@@ -289,20 +290,12 @@ namespace XmlWriter
             int startIdx = template.IndexOf(startTag);
             int endIdx = template.IndexOf(endTag);
 
-            // マクロが存在しない、または対応が不正な場合はそのまま返す
-            if (startIdx == -1 || endIdx == -1 || endIdx < startIdx)
-            {
-                return template;
-            }
+            if (startIdx == -1 || endIdx == -1 || endIdx < startIdx) return template;
 
-            // ブロックの中身を抽出 (タグの長さ分オフセット)
-            // startTagの後ろから、endTagの前まで
+            // ブロックの中身を抽出
             int contentStart = startIdx + startTag.Length;
             int contentLength = endIdx - contentStart;
             string blockTemplate = template.Substring(contentStart, contentLength);
-
-            // 最初の改行が残ることがあるので、トリムするか調整（ここではそのまま使用し、Replace時に調整）
-            // テンプレート側で直後に改行を入れている場合、blockTemplateの先頭は改行コードになる
 
             // ルート以外の全ノード(サブクラス)を取得
             var subNodes = rootNode.GetAllNodes().Where(n => !n.IsRoot).ToList();
@@ -311,20 +304,76 @@ namespace XmlWriter
 
             foreach (var node in subNodes)
             {
-                // ブロックテンプレートをコピーして置換
+                // 1. まず、サブクラス単位の変数を置換
                 string instance = blockTemplate
-                    .Replace("@SubClassName", node.ClassName)       // ユニーク名 (例: Table_User)
-                    .Replace("@SubClassTagName", node.XmlTagName)   // 元のタグ名 (例: User)
-                    .Replace("@TableName", rootTableName)           // テーブル名も使えるようにする
-                    .Replace("@SubClassProperties", BuildPropertiesCodeOnly(node, "        ")); // プロパティ展開
+                    .Replace("@SubClassName", node.ClassName)
+                    .Replace("@SubClassTagName", node.XmlTagName)
+                    .Replace("@TableName", rootTableName);
+
+                // 2. ★ 次に、その内側にあるプロパティ用マクロ (#ForAllSubClassProperties) を処理
+                instance = ProcessInnerPropertyMacros(instance, node);
 
                 loopContent.Append(instance);
             }
 
-            // 元のテンプレートの #ForAll... ～ #EndForAll... を生成したコンテンツで置き換える
-            // Remove範囲: startTagの先頭から、endTagの末尾まで
             int removeLength = (endIdx + endTag.Length) - startIdx;
+            return template.Remove(startIdx, removeLength).Insert(startIdx, loopContent.ToString());
+        }
 
+        // ★ 新規: 内側のループ (#ForAllSubClassProperties) を処理
+        private string ProcessInnerPropertyMacros(string template, ClassNode node)
+        {
+            string startTag = "#ForAllSubClassProperties";
+            string endTag = "#EndForAllSubClassProperties";
+
+            int startIdx = template.IndexOf(startTag);
+            int endIdx = template.IndexOf(endTag);
+
+            // マクロがない場合は何もしない（プロパティが無いクラス、あるいはテンプレートに記述がない場合）
+            if (startIdx == -1 || endIdx == -1 || endIdx < startIdx) return template;
+
+            int contentStart = startIdx + startTag.Length;
+            int contentLength = endIdx - contentStart;
+            string blockTemplate = template.Substring(contentStart, contentLength);
+
+            StringBuilder loopContent = new StringBuilder();
+
+            // -------------------------------------------------
+            // プロパティと子クラスを統合リストとして扱う
+            // -------------------------------------------------
+            var allProperties = new List<dynamic>();
+
+            // 1. 通常の変数をリストに追加
+            foreach (var prop in node.Properties)
+            {
+                allProperties.Add(new
+                {
+                    Name = prop.Name,
+                    Type = ConvertType(prop.TypeName, prop.IsArray)
+                });
+            }
+
+            // 2. 子クラス(グループ)をリストに追加
+            foreach (var child in node.Children)
+            {
+                allProperties.Add(new
+                {
+                    Name = child.XmlTagName, // プロパティ名 (XMLタグ名)
+                    Type = child.ClassName   // 型名 (ユニーククラス名)
+                });
+            }
+
+            // 統合リストをループ処理
+            foreach (var prop in allProperties)
+            {
+                string instance = blockTemplate
+                    .Replace("@SubClassPropertyName", prop.Name)
+                    .Replace("@SubClassPropertyType", prop.Type);
+
+                loopContent.Append(instance);
+            }
+
+            int removeLength = (endIdx + endTag.Length) - startIdx;
             return template.Remove(startIdx, removeLength).Insert(startIdx, loopContent.ToString());
         }
 
