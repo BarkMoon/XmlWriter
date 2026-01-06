@@ -297,6 +297,11 @@ namespace XmlWriter
             int contentLength = endIdx - contentStart;
             string blockTemplate = template.Substring(contentStart, contentLength);
 
+            // ★ 修正1: テンプレートブロック先頭の改行コード(\r\n, \n)を除去
+            // これにより、繰り返しのたびに先頭に空行が入るのを防ぎます
+            if (blockTemplate.StartsWith("\r\n")) blockTemplate = blockTemplate.Substring(2);
+            else if (blockTemplate.StartsWith("\n")) blockTemplate = blockTemplate.Substring(1);
+
             // ルート以外の全ノード(サブクラス)を取得
             var subNodes = rootNode.GetAllNodes().Where(n => !n.IsRoot).ToList();
 
@@ -304,23 +309,32 @@ namespace XmlWriter
 
             foreach (var node in subNodes)
             {
-                // 1. まず、サブクラス単位の変数を置換
+                // 1. サブクラス単位の変数を置換
                 string instance = blockTemplate
                     .Replace("@SubClassName", node.ClassName)
                     .Replace("@SubClassTagName", node.XmlTagName)
                     .Replace("@TableName", rootTableName);
 
-                // 2. ★ 次に、その内側にあるプロパティ用マクロ (#ForAllSubClassProperties) を処理
+                // 2. 内側のプロパティ用マクロを処理
                 instance = ProcessInnerPropertyMacros(instance, node);
 
                 loopContent.Append(instance);
             }
 
-            int removeLength = (endIdx + endTag.Length) - startIdx;
+            // ★ 修正2: #Endタグの後ろにある改行コードも巻き込んで削除範囲を決定
+            // これにより、ブロック終了後の不要な空行を防ぎます
+            int removeEndIndex = endIdx + endTag.Length;
+            if (removeEndIndex < template.Length && template[removeEndIndex] == '\r') removeEndIndex++;
+            if (removeEndIndex < template.Length && template[removeEndIndex] == '\n') removeEndIndex++;
+
+            int removeLength = removeEndIndex - startIdx;
+
+            // 置換実行 (再帰的に複数ブロックがある場合に対応するため、再帰呼び出しまたはループが必要ですが、
+            // 今回の要件では1ブロック想定。複数ブロック対応なら while ループにします)
             return template.Remove(startIdx, removeLength).Insert(startIdx, loopContent.ToString());
         }
 
-        // ★ 新規: 内側のループ (#ForAllSubClassProperties) を処理
+        // 内側のループ (#ForAllSubClassProperties) を処理
         private string ProcessInnerPropertyMacros(string template, ClassNode node)
         {
             string startTag = "#ForAllSubClassProperties";
@@ -329,21 +343,21 @@ namespace XmlWriter
             int startIdx = template.IndexOf(startTag);
             int endIdx = template.IndexOf(endTag);
 
-            // マクロがない場合は何もしない（プロパティが無いクラス、あるいはテンプレートに記述がない場合）
             if (startIdx == -1 || endIdx == -1 || endIdx < startIdx) return template;
 
             int contentStart = startIdx + startTag.Length;
             int contentLength = endIdx - contentStart;
             string blockTemplate = template.Substring(contentStart, contentLength);
 
+            // ★ 修正1: テンプレートブロック先頭の改行コードを除去
+            if (blockTemplate.StartsWith("\r\n")) blockTemplate = blockTemplate.Substring(2);
+            else if (blockTemplate.StartsWith("\n")) blockTemplate = blockTemplate.Substring(1);
+
             StringBuilder loopContent = new StringBuilder();
 
-            // -------------------------------------------------
             // プロパティと子クラスを統合リストとして扱う
-            // -------------------------------------------------
             var allProperties = new List<dynamic>();
 
-            // 1. 通常の変数をリストに追加
             foreach (var prop in node.Properties)
             {
                 allProperties.Add(new
@@ -353,17 +367,15 @@ namespace XmlWriter
                 });
             }
 
-            // 2. 子クラス(グループ)をリストに追加
             foreach (var child in node.Children)
             {
                 allProperties.Add(new
                 {
-                    Name = child.XmlTagName, // プロパティ名 (XMLタグ名)
-                    Type = child.ClassName   // 型名 (ユニーククラス名)
+                    Name = child.XmlTagName,
+                    Type = child.ClassName
                 });
             }
 
-            // 統合リストをループ処理
             foreach (var prop in allProperties)
             {
                 string instance = blockTemplate
@@ -373,7 +385,13 @@ namespace XmlWriter
                 loopContent.Append(instance);
             }
 
-            int removeLength = (endIdx + endTag.Length) - startIdx;
+            // ★ 修正2: #Endタグの後ろにある改行コードも巻き込んで削除範囲を決定
+            int removeEndIndex = endIdx + endTag.Length;
+            if (removeEndIndex < template.Length && template[removeEndIndex] == '\r') removeEndIndex++;
+            if (removeEndIndex < template.Length && template[removeEndIndex] == '\n') removeEndIndex++;
+
+            int removeLength = removeEndIndex - startIdx;
+
             return template.Remove(startIdx, removeLength).Insert(startIdx, loopContent.ToString());
         }
 
