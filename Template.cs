@@ -8,23 +8,25 @@ using System.Xml.Serialization;
 
 namespace GeneratedClasses
 {
-    /// <summary>
-    /// Excelテーブル '@TableName' のクラス
-    /// 親クラスやインターフェースを自由に追加できます
-    /// </summary>
+    // ==========================================
+    // ルートクラス定義
+    // ==========================================
     [XmlRoot("Record")]
-    public class @TableName : SerializeData
+    public partial class @TableName
     {
-        // ▼ ここにルートクラスの変数が展開されます
 @RootProperties
-
-        // ▼ テンプレート側で自由にメソッドや固定変数を追加できます
-        public string GetOriginalName()
-        {
-            return Name.OriginalName;
-        }
     }
 
-    // ▼ ここにサブクラス（グループ）の定義が展開されます
-@SubClasses
+    // ==========================================
+    // サブクラス定義 (マクロによる繰り返し生成)
+    // ==========================================
+#ForAllSubClasses
+    /// <summary>
+    /// 元のタグ名: @SubClassTagName
+    /// </summary>
+    public partial class @SubClassName
+    {
+@SubClassProperties
+    }
+#EndForAllSubClasses
 }

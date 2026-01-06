@@ -264,32 +264,68 @@ namespace XmlWriter
                 rootNode.AddPath(col.PathParts, col.TypeName, col.IsArray, rootClassName);
             }
 
-            // 2. コード生成
-            // (A) ルートクラス用: プロパティ定義のみ生成 (インデント深め: 8スペース想定)
+            // 2. マクロブロック (#ForAllSubClasses) の処理
+            string processedTemplate = ProcessTemplateMacros(template, rootNode, rootClassName);
+
+            // 3. ルートクラスのプロパティ生成 (インデント 8スペース)
             string rootPropertiesCode = BuildPropertiesCodeOnly(rootNode, "        ");
 
-            // (B) サブクラス用: クラス定義全体を生成 (インデント浅め: 4スペース想定)
-            StringBuilder subClassesSb = new StringBuilder();
-            // ルート以外の全ノードを取得（ルート自身は除外するロジックが必要）
-            var allNodes = rootNode.GetAllNodes();
-
-            foreach (var node in allNodes)
-            {
-                if (node.IsRoot) continue; // ルートのクラス定義はテンプレートにあるのでスキップ
-
-                subClassesSb.AppendLine(BuildFullClassCode(node, "    "));
-                subClassesSb.AppendLine();
-            }
-
-            // 3. 置換と改行コード統一
-            string code = template
+            // 4. 残りのグローバル置換
+            string finalCode = processedTemplate
                 .Replace("@TableName", rootClassName)
                 .Replace("@GeneratedDate", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"))
-                .Replace("@RootProperties", rootPropertiesCode.TrimEnd()) // 末尾の改行除去
-                .Replace("@SubClasses", subClassesSb.ToString().TrimEnd());
+                .Replace("@RootProperties", rootPropertiesCode.TrimEnd());
 
-            // CR+LF に統一
-            return code.Replace("\r\n", "\n").Replace("\n", "\r\n");
+            // 改行コード統一 (CR+LF)
+            return finalCode.Replace("\r\n", "\n").Replace("\n", "\r\n");
+        }
+
+        // ★ 新規: マクロブロックの解析と展開を行うメソッド
+        private string ProcessTemplateMacros(string template, ClassNode rootNode, string rootTableName)
+        {
+            string startTag = "#ForAllSubClasses";
+            string endTag = "#EndForAllSubClasses";
+
+            int startIdx = template.IndexOf(startTag);
+            int endIdx = template.IndexOf(endTag);
+
+            // マクロが存在しない、または対応が不正な場合はそのまま返す
+            if (startIdx == -1 || endIdx == -1 || endIdx < startIdx)
+            {
+                return template;
+            }
+
+            // ブロックの中身を抽出 (タグの長さ分オフセット)
+            // startTagの後ろから、endTagの前まで
+            int contentStart = startIdx + startTag.Length;
+            int contentLength = endIdx - contentStart;
+            string blockTemplate = template.Substring(contentStart, contentLength);
+
+            // 最初の改行が残ることがあるので、トリムするか調整（ここではそのまま使用し、Replace時に調整）
+            // テンプレート側で直後に改行を入れている場合、blockTemplateの先頭は改行コードになる
+
+            // ルート以外の全ノード(サブクラス)を取得
+            var subNodes = rootNode.GetAllNodes().Where(n => !n.IsRoot).ToList();
+
+            StringBuilder loopContent = new StringBuilder();
+
+            foreach (var node in subNodes)
+            {
+                // ブロックテンプレートをコピーして置換
+                string instance = blockTemplate
+                    .Replace("@SubClassName", node.ClassName)       // ユニーク名 (例: Table_User)
+                    .Replace("@SubClassTagName", node.XmlTagName)   // 元のタグ名 (例: User)
+                    .Replace("@TableName", rootTableName)           // テーブル名も使えるようにする
+                    .Replace("@SubClassProperties", BuildPropertiesCodeOnly(node, "        ")); // プロパティ展開
+
+                loopContent.Append(instance);
+            }
+
+            // 元のテンプレートの #ForAll... ～ #EndForAll... を生成したコンテンツで置き換える
+            // Remove範囲: startTagの先頭から、endTagの末尾まで
+            int removeLength = (endIdx + endTag.Length) - startIdx;
+
+            return template.Remove(startIdx, removeLength).Insert(startIdx, loopContent.ToString());
         }
 
         // パターンA: プロパティ定義のみを生成する (ルートクラスの中身用)
