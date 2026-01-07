@@ -17,7 +17,7 @@ public static class SerializeDataLoader
     		doc.PreserveWhitespace = true;
     		doc.Load(filePath);
 
-    		if (null == doc.DocumentElement) { throw new System.Exception("doc.DocumentElement == null"); }
+    		if (null == doc.DocumentElement) { throw new System.Exception($"[{filePath}] doc.DocumentElement == null"); }
 
     		System.Xml.XmlNodeReader reader = new System.Xml.XmlNodeReader(doc.DocumentElement);
             System.Xml.Serialization.XmlSerializer serializer = new System.Xml.Serialization.XmlSerializer(typeof(T));
