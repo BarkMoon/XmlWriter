@@ -6,7 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Xml.Serialization;
 
-namespace GeneratedClasses
+namespace XmlData
 {
     // ==========================================
     // ルートクラス定義
@@ -31,8 +31,8 @@ namespace GeneratedClasses
 #EndForAllSubClassProperties
 #EndForAllSubClasses
             cardData.cardDataCollectionName = "#Replace(@TableName, CardData, CardDataCollection)";
-#Endif
         }
+#Endif
     }
 
     // ==========================================
