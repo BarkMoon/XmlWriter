@@ -12,12 +12,16 @@ namespace XmlData
     // ルートクラス定義
     // ==========================================
     [XmlRoot("Record")]
-    public class @TableName : ISerializeData
+#If(#Contains(@TableName, CardData))
+    public class @TableName : IXmlCardData
+#Else
+    public class @TableName : IXmlData
+#Endif
     {
 @RootProperties
 
 #If(#Contains(@TableName, CardData))
-        public void SetCardData(CardData cardData)
+        public override void SetCardData(CardData cardData)
         {
             cardData.cardNo = Id;
             cardData.cardOriginalName = Name.OriginalName;

@@ -1,0 +1,115 @@
+using System.Collections;
+using XmlData;
+
+// SerializeData (IXmlData) のロード用のstaticなクラス。
+// ユーティリティとしてDataManager, CardDataManagerなどから切り離している。
+public static class SerializeDataLoader
+{
+    // filePathからXMLデータを読み込んで、serializeDataに出力する。
+    // 読み込み失敗時のserializeDataはnullにならず、デフォルト値になる。
+    public bool LoadSerializeData<T>(string filePath, out T serializeData)
+        where T : new(), IXmlData
+    {
+        bool success = false;
+        try
+        {
+            System.Xml.XmlDocument doc = new System.Xml.XmlDocument();
+    		doc.PreserveWhitespace = true;
+    		doc.Load(filePath);
+
+    		if (null == doc.DocumentElement) { throw new System.Exception("doc.DocumentElement == null"); }
+
+    		System.Xml.XmlNodeReader reader = new System.Xml.XmlNodeReader(doc.DocumentElement);
+            System.Xml.Serialization.XmlSerializer serializer = new System.Xml.Serialization.XmlSerializer(typeof(T));
+
+            serializeData = (T)serializer.Deserialize(reader);
+            success = true;
+        }
+        catch(System.Exception)
+        {
+            serializeData = new T();
+            success = false;
+        }
+        return success;
+    }
+}
+
+// カードデータだけ特殊なので、専用のCardDataManagerを置く。
+public class CardDataManager : Singleton<CardDataManager>
+{
+    // カードコレクションID → カードデータコレクションの辞書。
+    private Dictionary<int, CardDataCollection> cardCollectionDictionary;
+
+    public CardDataCollection GetCardDataCollection(int id)
+    {
+        CardDataCollection cardDataCollection;
+        if(CardIdToDataDictionary.TryGetValue(id, out cardDataCollection))
+        {
+
+            return cardDataCollection;
+        }
+        else
+        {
+            return null;
+        }  
+    }
+
+    public IXmlCardData GetXmlCardData(int cardDataCollectionId, int cardDataId)
+    {
+        var cardDataCollection = GetCardDataCollection(cardDataCollectionId);
+        if(cardDataCollection != null)
+        {
+            var cardData = cardDataCollection.GetCardDataFromId<IXmlCardData>(cardDataId);
+            return cardData;
+        }
+        else
+        {
+            return null;
+        }
+    }
+
+    public IXmlCardData SearchXmlCardData(int cardDataId)
+    {
+        foreach(var kvp in cardCollectionDictionary)
+        {
+            CardDataCollection cardDataCollection = kvp.Value;
+            var searchedData = cardDataCollection.GetCardDataFromId<IXmlCardData>(id);
+            if(searchedData != null)
+            {
+                return searchedData;
+            }
+        }
+        return null;
+    }
+}
+
+public class CardDataCollection
+{
+    // カードID → カードデータの辞書。
+    protected Dictionary<int, IXmlCardData> cardDataDictionary;
+
+    public void SetXmlCardData(int id, string filePath)
+    {
+
+    }
+
+    public T GetCardDataFromId<T>(int id)
+        where T : IXmlCardData
+    {
+        IXmlCardData cardData;
+        if(cardDataDictionary.TryGetValue(id, out cardData))
+        {
+
+            return (T)cardData;
+        }
+        else
+        {
+            return null;
+        }    
+    }
+}
+
+public class CardDataCollection_Hanafuda : CardDataCollection
+{
+    static
+}
