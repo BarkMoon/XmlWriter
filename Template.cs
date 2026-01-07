@@ -12,7 +12,7 @@ namespace XmlData
     // ルートクラス定義
     // ==========================================
     [XmlRoot("Record")]
-    public partial class @TableName
+    public class @TableName : ISerializeData
     {
 @RootProperties
 
@@ -43,7 +43,7 @@ namespace XmlData
     /// <summary>
     /// 元のタグ名: @SubClassTagName
     /// </summary>
-    public partial class @SubClassName
+    public class @SubClassName
     {
 #ForAllSubClassProperties
         [XmlElement("@SubClassPropertyName")]
