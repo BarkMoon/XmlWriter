@@ -32,7 +32,7 @@ namespace XmlData
 #Endif
 #EndForAllSubClassProperties
 #EndForAllSubClasses
-            cardData.releaseDate = ReleaseDate;
+            cardDataCollection.releaseDate = ReleaseDate;
         }
 #Endif
     }
