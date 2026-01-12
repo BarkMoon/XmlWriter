@@ -22,7 +22,7 @@ namespace XmlData
 @RootProperties
 
 #If(#Contains(@TableName, CardData_))
-        public override void SetCardData(CardData cardData)
+        public void SetCardData(CardData cardData)
         {
             cardData.cardNo = Id;
             cardData.cardOriginalName = Name.OriginalName;
