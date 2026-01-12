@@ -12,6 +12,9 @@ namespace XmlWriter
 {
     public partial class Form1 : Form
     {
+        // INIファイル管理クラス
+        private IniFile ini = new IniFile();
+
         public Form1()
         {
             InitializeComponent();
@@ -78,10 +81,21 @@ namespace XmlWriter
             using (OpenFileDialog ofd = new OpenFileDialog())
             {
                 ofd.Filter = "Excel Files|*.xlsx";
+
+                // ★追加: INIから前回のフォルダを読み込んでセット
+                string lastFolder = ini.Read("LastExcelFolder");
+                if (!string.IsNullOrEmpty(lastFolder) && Directory.Exists(lastFolder))
+                {
+                    ofd.InitialDirectory = lastFolder;
+                }
+
                 if (ofd.ShowDialog() == DialogResult.OK)
                 {
                     txtFilePath.Text = ofd.FileName;
                     LoadTableNames(ofd.FileName);
+
+                    // ★追加: 選択したフォルダをINIに保存
+                    ini.Write("LastExcelFolder", Path.GetDirectoryName(ofd.FileName));
                 }
             }
         }
@@ -196,18 +210,80 @@ namespace XmlWriter
             }
         }
 
-        // --- C#クラス生成 ---
+        // ---------------------------------------------------------
+        // ★新規: テンプレート参照ボタンの処理
+        // ---------------------------------------------------------
+        private void btnBrowseTemplate_Click(object sender, EventArgs e)
+        {
+            using (OpenFileDialog ofd = new OpenFileDialog())
+            {
+                ofd.Filter = "C# Template File|*.cs";
+                ofd.Title = "テンプレートファイルを選択してください";
+
+                // ★修正: INIから前回のフォルダを読み込んでセット
+                string lastFolder = ini.Read("LastTemplateFolder");
+
+                if (!string.IsNullOrEmpty(lastFolder) && Directory.Exists(lastFolder))
+                {
+                    ofd.InitialDirectory = lastFolder;
+                }
+                else
+                {
+                    // 初回は実行ファイルのあるフォルダ
+                    ofd.InitialDirectory = Application.StartupPath;
+                }
+
+                if (ofd.ShowDialog() == DialogResult.OK)
+                {
+                    txtTemplatePath.Text = ofd.FileName;
+
+                    // ★修正: 選択したフォルダをINIに保存
+                    ini.Write("LastTemplateFolder", Path.GetDirectoryName(ofd.FileName));
+                }
+            }
+        }
+
+
+        // ---------------------------------------------------------
+        // ★変更: C#クラス生成ボタンの処理
+        // ---------------------------------------------------------
         private void btnGenerateClass_Click(object sender, EventArgs e)
         {
-            if (string.IsNullOrEmpty(txtFilePath.Text) || cmbSheetName.SelectedItem == null) return;
+            if (string.IsNullOrEmpty(txtFilePath.Text) || cmbSheetName.SelectedItem == null)
+            {
+                MessageBox.Show("Excelファイルとテーブルを選択してください。");
+                return;
+            }
 
             string tableName = cmbSheetName.SelectedItem.ToString();
+            string templatePath;
+
+            // ★ テンプレートパスの決定
+            if (!string.IsNullOrEmpty(txtTemplatePath.Text))
+            {
+                // ユーザー指定のテンプレートを使用
+                templatePath = txtTemplatePath.Text;
+            }
+            else
+            {
+                // 未指定の場合はデフォルト (実行フォルダの Template.cs)
+                templatePath = Path.Combine(Application.StartupPath, "Template.cs");
+            }
+
+            // ファイル存在確認
+            if (!File.Exists(templatePath))
+            {
+                MessageBox.Show($"テンプレートファイルが見つかりません。\nパス: {Path.GetFullPath(templatePath)}", "エラー");
+                return;
+            }
+
             try
             {
                 UpdateStatus("クラス生成中...");
-                string templateContent = GetTemplateContent(); // 埋め込みリソースから取得
 
-                // ★ ヘルパーメソッドを使用
+                // テンプレート読み込み
+                string templateContent = File.ReadAllText(templatePath, Encoding.UTF8);
+
                 using (var workbook = OpenWorkbookReadOnly(txtFilePath.Text))
                 {
                     var table = workbook.Table(tableName);
@@ -215,22 +291,39 @@ namespace XmlWriter
                         .Select(c => new ColumnInfo(c.GetValue<string>()))
                         .ToList();
 
+                    // クラスコードの生成
                     string finalCode = GenerateCSharpFromTemplate(tableName, headers, templateContent);
 
+                    // 保存
                     using (SaveFileDialog sfd = new SaveFileDialog())
                     {
                         sfd.FileName = $"{tableName}.cs";
                         sfd.Filter = "C# File|*.cs";
+
+                        // ★追加: INIから前回の保存先フォルダを読み込んでセット
+                        string lastFolder = ini.Read("LastClassOutputFolder");
+                        if (!string.IsNullOrEmpty(lastFolder) && Directory.Exists(lastFolder))
+                        {
+                            sfd.InitialDirectory = lastFolder;
+                        }
+
                         if (sfd.ShowDialog() == DialogResult.OK)
                         {
                             File.WriteAllText(sfd.FileName, finalCode, Encoding.UTF8);
+
+                            // ★追加: 保存先のフォルダをINIに保存
+                            ini.Write("LastClassOutputFolder", Path.GetDirectoryName(sfd.FileName));
+
                             MessageBox.Show("クラスファイルを保存しました。", "成功");
                         }
                     }
                 }
                 UpdateStatus("完了");
             }
-            catch (Exception ex) { MessageBox.Show($"エラー: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"エラー: {ex.Message}");
+            }
         }
 
         // 修正版: 外部ファイル (Template.cs) を読み込む

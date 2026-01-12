@@ -32,9 +32,16 @@
             this.txtFilePath = new System.Windows.Forms.TextBox();
             this.btnBrowse = new System.Windows.Forms.Button();
             this.lblSheetName = new System.Windows.Forms.Label();
+            this.cmbSheetName = new System.Windows.Forms.ComboBox();
             this.btnGenerate = new System.Windows.Forms.Button();
             this.lblStatus = new System.Windows.Forms.Label();
-            this.cmbSheetName = new System.Windows.Forms.ComboBox();
+
+            // ★追加: テンプレート選択用
+            this.lblTemplate = new System.Windows.Forms.Label();
+            this.txtTemplatePath = new System.Windows.Forms.TextBox();
+            this.btnBrowseTemplate = new System.Windows.Forms.Button();
+
+            this.btnGenerateClass = new System.Windows.Forms.Button();
             this.SuspendLayout();
             // 
             // lblFilePath
@@ -71,12 +78,20 @@
             this.lblSheetName.Name = "lblSheetName";
             this.lblSheetName.Size = new System.Drawing.Size(126, 12);
             this.lblSheetName.TabIndex = 3;
-            // ★ テキストを「テーブル名」に変更
             this.lblSheetName.Text = "データテーブル名を選択:";
+            // 
+            // cmbSheetName
+            // 
+            this.cmbSheetName.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.cmbSheetName.FormattingEnabled = true;
+            this.cmbSheetName.Location = new System.Drawing.Point(26, 115);
+            this.cmbSheetName.Name = "cmbSheetName";
+            this.cmbSheetName.Size = new System.Drawing.Size(200, 20);
+            this.cmbSheetName.TabIndex = 4;
             // 
             // btnGenerate
             // 
-            this.btnGenerate.Location = new System.Drawing.Point(26, 160);
+            this.btnGenerate.Location = new System.Drawing.Point(26, 150);
             this.btnGenerate.Name = "btnGenerate";
             this.btnGenerate.Size = new System.Drawing.Size(439, 40);
             this.btnGenerate.TabIndex = 5;
@@ -88,28 +103,45 @@
             // 
             this.lblStatus.AutoSize = true;
             this.lblStatus.ForeColor = System.Drawing.Color.Gray;
-            this.lblStatus.Location = new System.Drawing.Point(26, 220);
+            this.lblStatus.Location = new System.Drawing.Point(26, 350); // 位置調整
             this.lblStatus.Name = "lblStatus";
             this.lblStatus.Size = new System.Drawing.Size(53, 12);
-            this.lblStatus.TabIndex = 6;
+            this.lblStatus.TabIndex = 9; // Index調整
             this.lblStatus.Text = "準備完了";
             // 
-            // cmbSheetName
+            // lblTemplate
             // 
-            this.cmbSheetName.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
-            this.cmbSheetName.FormattingEnabled = true;
-            this.cmbSheetName.Location = new System.Drawing.Point(26, 115);
-            this.cmbSheetName.Name = "cmbSheetName";
-            this.cmbSheetName.Size = new System.Drawing.Size(200, 20);
-            this.cmbSheetName.TabIndex = 7;
-            //
+            this.lblTemplate.AutoSize = true;
+            this.lblTemplate.Location = new System.Drawing.Point(24, 210);
+            this.lblTemplate.Name = "lblTemplate";
+            this.lblTemplate.Size = new System.Drawing.Size(177, 12);
+            this.lblTemplate.TabIndex = 6;
+            this.lblTemplate.Text = "テンプレートファイル (未指定でデフォルト):";
+            // 
+            // txtTemplatePath
+            // 
+            this.txtTemplatePath.Location = new System.Drawing.Point(26, 230);
+            this.txtTemplatePath.Name = "txtTemplatePath";
+            this.txtTemplatePath.ReadOnly = true;
+            this.txtTemplatePath.Size = new System.Drawing.Size(350, 19);
+            this.txtTemplatePath.TabIndex = 7;
+            // 
+            // btnBrowseTemplate
+            // 
+            this.btnBrowseTemplate.Location = new System.Drawing.Point(390, 228);
+            this.btnBrowseTemplate.Name = "btnBrowseTemplate";
+            this.btnBrowseTemplate.Size = new System.Drawing.Size(75, 23);
+            this.btnBrowseTemplate.TabIndex = 8;
+            this.btnBrowseTemplate.Text = "参照...";
+            this.btnBrowseTemplate.UseVisualStyleBackColor = true;
+            this.btnBrowseTemplate.Click += new System.EventHandler(this.btnBrowseTemplate_Click);
+            // 
             // btnGenerateClass
             // 
-            this.btnGenerateClass = new System.Windows.Forms.Button();
-            this.btnGenerateClass.Location = new System.Drawing.Point(26, 260); // 位置は適宜調整
+            this.btnGenerateClass.Location = new System.Drawing.Point(26, 270);
             this.btnGenerateClass.Name = "btnGenerateClass";
             this.btnGenerateClass.Size = new System.Drawing.Size(439, 40);
-            this.btnGenerateClass.TabIndex = 8;
+            this.btnGenerateClass.TabIndex = 9;
             this.btnGenerateClass.Text = "C#クラス定義の生成 (.cs)";
             this.btnGenerateClass.UseVisualStyleBackColor = true;
             this.btnGenerateClass.Click += new System.EventHandler(this.btnGenerateClass_Click);
@@ -118,15 +150,18 @@
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 12F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(500, 320);
-            this.Controls.Add(this.cmbSheetName);
+            this.ClientSize = new System.Drawing.Size(500, 380); // 高さを拡張
+            this.Controls.Add(this.btnGenerateClass);
+            this.Controls.Add(this.btnBrowseTemplate);
+            this.Controls.Add(this.txtTemplatePath);
+            this.Controls.Add(this.lblTemplate);
             this.Controls.Add(this.lblStatus);
             this.Controls.Add(this.btnGenerate);
+            this.Controls.Add(this.cmbSheetName);
             this.Controls.Add(this.lblSheetName);
             this.Controls.Add(this.btnBrowse);
             this.Controls.Add(this.txtFilePath);
             this.Controls.Add(this.lblFilePath);
-            this.Controls.Add(this.btnGenerateClass);
             this.Name = "Form1";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "Excel to XML Converter (XmlWriter)";
@@ -141,9 +176,13 @@
         private System.Windows.Forms.TextBox txtFilePath;
         private System.Windows.Forms.Button btnBrowse;
         private System.Windows.Forms.Label lblSheetName;
+        private System.Windows.Forms.ComboBox cmbSheetName;
         private System.Windows.Forms.Button btnGenerate;
         private System.Windows.Forms.Label lblStatus;
-        private System.Windows.Forms.ComboBox cmbSheetName;
+        // 新規追加
+        private System.Windows.Forms.Label lblTemplate;
+        private System.Windows.Forms.TextBox txtTemplatePath;
+        private System.Windows.Forms.Button btnBrowseTemplate;
         private System.Windows.Forms.Button btnGenerateClass;
     }
 }

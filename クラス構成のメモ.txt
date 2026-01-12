@@ -51,7 +51,7 @@ public class CardDataManager : Singleton<CardDataManager>
         else
         {
             return null;
-        }  
+        }
     }
 
     public IXmlCardData GetXmlCardData(int cardDataCollectionId, int cardDataId)
