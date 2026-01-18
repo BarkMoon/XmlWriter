@@ -11,42 +11,159 @@ namespace XmlWriter.Utility
 {
     public static class CommandRunner
     {
-        public static void Run(string excelPath, string outputDir, string templateFilePath)
+        public enum ExecutionMode
         {
-            Console.WriteLine($"Processing Excel: {excelPath}");
-            Console.WriteLine($"Output Directory: {outputDir}");
-            Console.WriteLine($"Template File: {templateFilePath}");
+            All,
+            Xml,
+            Code,
+            List
+        }
 
-            if (!File.Exists(excelPath))
+        public class RunOptions
+        {
+            public string ExcelPath { get; set; }
+            public string OutputDir { get; set; }
+            public string TemplateFilePath { get; set; }
+            public ExecutionMode Mode { get; set; } = ExecutionMode.All;
+            public string TargetTableName { get; set; } // Optional: null or empty means all
+        }
+
+        public static void Run(RunOptions options)
+        {
+            SetupLogger();
+            Log($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Start Execution");
+            Log($"Mode: {options.Mode}");
+            Log($"Excel: {options.ExcelPath}");
+            if (!string.IsNullOrEmpty(options.TargetTableName))
             {
-                throw new FileNotFoundException("Excel file not found", excelPath);
+                Log($"Target Table: {options.TargetTableName}");
             }
 
-            if (!File.Exists(templateFilePath))
+            if (!File.Exists(options.ExcelPath))
             {
-                throw new FileNotFoundException("Template file not found", templateFilePath);
+                throw new FileNotFoundException("Excel file not found", options.ExcelPath);
             }
 
-            // Read template content once
-            string templateContent = File.ReadAllText(templateFilePath, Encoding.UTF8);
-
-            using (var workbook = OpenWorkbookReadOnly(excelPath))
+            // Mode Check for required paths
+            if (options.Mode == ExecutionMode.Code || options.Mode == ExecutionMode.All)
             {
+                if (string.IsNullOrEmpty(options.TemplateFilePath) || !File.Exists(options.TemplateFilePath))
+                {
+                    throw new FileNotFoundException("Template file not found (Required for Code generation)", options.TemplateFilePath);
+                }
+            }
+
+            using (var workbook = OpenWorkbookReadOnly(options.ExcelPath))
+            {
+                // List Mode
+                if (options.Mode == ExecutionMode.List)
+                {
+                    ListTables(workbook);
+                    return;
+                }
+
+                Log($"Output Directory: {options.OutputDir}");
+                if (options.Mode == ExecutionMode.Code || options.Mode == ExecutionMode.All)
+                {
+                    Log($"Template File: {options.TemplateFilePath}");
+                }
+
+                // Prepare Template Content
+                string templateContent = null;
+                if (options.Mode == ExecutionMode.Code || options.Mode == ExecutionMode.All)
+                {
+                    templateContent = File.ReadAllText(options.TemplateFilePath, Encoding.UTF8);
+                }
+
                 foreach (var ws in workbook.Worksheets)
                 {
                     foreach (var table in ws.Tables)
                     {
                         string tableName = table.Name;
-                        Console.WriteLine($"Processing Table: {tableName}");
+
+                        // Filtering
+                        if (!string.IsNullOrEmpty(options.TargetTableName))
+                        {
+                            if (!tableName.Equals(options.TargetTableName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                continue;
+                            }
+                        }
+
+                        Log($"Processing Table: {tableName}");
 
                         // 1. Generate XML
-                        GenerateXmlFromExcel(workbook, tableName, outputDir, excelPath);
+                        if (options.Mode == ExecutionMode.Xml || options.Mode == ExecutionMode.All)
+                        {
+                            GenerateXmlFromExcel(workbook, tableName, options.OutputDir, options.ExcelPath);
+                        }
 
                         // 2. Generate C#
-                        Console.WriteLine($"Generating Class using template: {Path.GetFileName(templateFilePath)}");
-                        GenerateCSharpFromTemplate(workbook, tableName, outputDir, templateContent);
+                        if (options.Mode == ExecutionMode.Code || options.Mode == ExecutionMode.All)
+                        {
+                            Log($"Generating Class using template: {Path.GetFileName(options.TemplateFilePath)}");
+                            GenerateCSharpFromTemplate(workbook, tableName, options.OutputDir, templateContent);
+                        }
                     }
                 }
+            }
+        }
+
+        private static void ListTables(XLWorkbook workbook)
+        {
+            foreach (var ws in workbook.Worksheets)
+            {
+                foreach (var table in ws.Tables)
+                {
+                    Console.WriteLine(table.Name);
+                    LogFileOnly(table.Name);
+                }
+            }
+        }
+
+        private static string _logFilePath;
+
+        private static void SetupLogger()
+        {
+            try
+            {
+                // 開発環境(bin/Release)の場合、プロジェクトルートのLogフォルダに出力したい
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string projectLogDir = Path.GetFullPath(Path.Combine(baseDir, @"..\..\Log"));
+
+                string targetLogDir;
+                if (Directory.Exists(projectLogDir))
+                {
+                    targetLogDir = projectLogDir;
+                }
+                else
+                {
+                    targetLogDir = Path.Combine(baseDir, "Log");
+                    if (!Directory.Exists(targetLogDir))
+                    {
+                        Directory.CreateDirectory(targetLogDir);
+                    }
+                }
+                _logFilePath = Path.Combine(targetLogDir, "execution_log.txt");
+            }
+            catch { }
+        }
+
+        private static void Log(string message)
+        {
+            Console.WriteLine(message);
+            LogFileOnly(message);
+        }
+
+        private static void LogFileOnly(string message)
+        {
+            if (!string.IsNullOrEmpty(_logFilePath))
+            {
+                try
+                {
+                    File.AppendAllText(_logFilePath, message + Environment.NewLine, Encoding.UTF8);
+                }
+                catch { }
             }
         }
 

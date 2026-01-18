@@ -5,7 +5,7 @@
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{AC7EF62A-B75B-4533-AB46-39727364226D}</ProjectGuid>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Exe</OutputType>
     <RootNamespace>XmlWriter</RootNamespace>
     <AssemblyName>XmlWriter</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>

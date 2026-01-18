@@ -1,56 +1,72 @@
 # XmlWriter CLI (Command Line Interface) 機能
 
 `XmlWriter.exe` はGUIでの操作に加え、コマンドライン引数を指定することで、自動処理（バッチ実行）が可能になりました。
-CI/CDパイプラインやバッチスクリプトからのデータ生成に使用できます。
+バージョン2.0より、柔軟な引数指定と実行モードの選択が可能になりました。
 
 ## 使用方法
 
-コマンドラインから以下の形式で実行してください。3つの引数がすべて必須です。
+### 基本構文
 
 ```powershell
-XmlWriter.exe <ExcelFilePath> <OutputDir> <TemplateFilePath>
+XmlWriter.exe <ExcelFilePath> -mode <Mode> [Options...]
 ```
 
-### 引数説明
+第1引数にExcelファイルのパスを指定し、以降のオプションで動作を制御します。
 
-1.  **ExcelFilePath** (`string`)
-    *   読み込むExcelファイル（`.xlsx`）へのフルパス。
-2.  **OutputDir** (`string`)
-    *   生成物を出力するルートディレクトリのパス。
-    *   このフォルダ内に `xml` および `code` フォルダが自動生成されます。
-3.  **TemplateFilePath** (`string`)
-    *   C#クラス生成用に使用するテンプレートファイル（`.cs`）へのフルパス。
-    *   **注意**: 指定したテンプレートファイルを使用して、Excelファイル内の**すべてのテーブル**に対するクラスコードが生成されます。
+### モード (`-mode` / `-m`)
 
-### 実行例
+以下のいずれかのモードを指定してください。（大文字小文字は区別されません）
+
+| モード名 | 説明 | 必須オプション |
+| :--- | :--- | :--- |
+| `All` | XML生成とC#コード生成の両方を行います。（デフォルト） | `-output`, `-template` |
+| `Xml` | XML生成のみを行います。 | `-output` |
+| `Code` | C#コード生成のみを行います。 | `-output`, `-template` |
+| `List` | Excelファイル内のテーブル一覧をコンソールに出力します。 | なし |
+
+### オプション引数
+
+| オプション (短縮) | 引数 | 説明 |
+| :--- | :--- | :--- |
+| `-output` (`-o`) | `<DirPath>` | 出力先ディレクトリのパス。`output/xml` や `output/code` が作成されます。 |
+| `-template` (`-t`) | `<FilePath>` | C#コード生成に使用するテンプレートファイルのパス。Code/Allモードで必須。 |
+| `-target` (`-table`) | `<TableName>` | 特定のテーブルのみを処理対象にする場合にテーブル名を指定します。省略時は全テーブル対象。 |
+
+## 実行例
+
+### 1. 全テーブルのXMLとコードを生成 (通常使用)
 
 ```powershell
-XmlWriter.exe "D:\Data\GameData.xlsx" "D:\Data\Out" "D:\Tools\XmlWriter\Templates\Template_Card.cs"
+XmlWriter.exe "Data.xlsx" -m All -o "OutDir" -t "Template.cs"
 ```
 
----
+### 2. XMLのみ生成
 
-## 出力仕様
+```powershell
+XmlWriter.exe "Data.xlsx" -m Xml -o "OutDir"
+```
 
-指定された `OutputDir` の下に、以下の構造でファイルが出力されます。
+### 3. 特定のテーブル ("Card_01") のみコード生成
 
+```powershell
+XmlWriter.exe "Data.xlsx" -m Code -o "OutDir" -t "Template.cs" -target "Card_01"
+```
+
+### 4. テーブル一覧の確認
+
+```powershell
+XmlWriter.exe "Data.xlsx" -m List
+```
+
+出力例:
 ```text
-OutputDir/
-├── xml/
-│   └── [テーブル名]/
-│       ├── [テーブル名]_[ID].xml
-│       └── ...
-└── code/
-    └── [テーブル名].cs
+Card_Monster
+Card_Item
+System_Config
 ```
 
 ## 注意事項
 
-旧バージョンとは異なり、テンプレートの自動選択機能はありません。
-コマンドラインで指定した1つのテンプレートファイルが、Excelに含まれるすべてのテーブルに対して適用されます。
-もしテーブルごとに異なるテンプレート（例: カード用とカードコレクション用）を適用したい場合は、Excelファイルを分けるか、ツールを複数回実行するなどの対応が必要です。
-
-## エラーハンドリング
-
-*   引数が不足している場合、使用方法をコンソールに出力して終了します。
-*   指定されたExcelファイルやテンプレートファイルが存在しない場合など、例外が発生した際はエラーメッセージとスタックトレースをコンソールに出力します。
+*   出力先ディレクトリ構成 (`xml/` および `code/`) は維持されます。
+*   `List` モードは結果を標準出力 (Stdout) に返します。他のツールとパイプで連携可能です。
+*   ファイルパス等に空白が含まれる場合は、ダブルクォーテーション `"` で囲んでください。
