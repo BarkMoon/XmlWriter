@@ -38,3 +38,7 @@ powershell -ExecutionPolicy Bypass -File BuildScript.ps1
 成功すると以下のパスに実行ファイルが生成されます。
 
 `bin/Release/XmlWriter.exe`
+
+また、ビルドの実行ログは以下のファイルに保存されます。
+
+`Log/build_log.txt`

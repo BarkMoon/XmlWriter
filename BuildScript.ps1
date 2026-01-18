@@ -19,4 +19,11 @@ if (-not (Test-Path $msbuildPath)) {
 
 $msbuildPath = $msbuildPath.Trim()
 Write-Host "Using MSBuild: $msbuildPath"
-& $msbuildPath "XmlWriter.csproj" /t:Build /p:Configuration=Release /v:m
+
+$logDir = "Log"
+if (-not (Test-Path $logDir)) {
+    New-Item -ItemType Directory -Path $logDir | Out-Null
+}
+$logFile = Join-Path $logDir "build_log.txt"
+
+& $msbuildPath "XmlWriter.csproj" /t:Build /p:Configuration=Release /v:m | Tee-Object -FilePath $logFile
