@@ -42,6 +42,9 @@
             this.btnBrowseTemplate = new System.Windows.Forms.Button();
 
             this.btnGenerateClass = new System.Windows.Forms.Button();
+            // Start Add
+            this.btnGenerateScriptFromData = new System.Windows.Forms.Button();
+            // End Add
             this.SuspendLayout();
             // 
             // lblFilePath
@@ -146,11 +149,22 @@
             this.btnGenerateClass.UseVisualStyleBackColor = true;
             this.btnGenerateClass.Click += new System.EventHandler(this.btnGenerateClass_Click);
             // 
+            // btnGenerateScriptFromData
+            // 
+            this.btnGenerateScriptFromData.Location = new System.Drawing.Point(26, 310); // Offset Y
+            this.btnGenerateScriptFromData.Name = "btnGenerateScriptFromData";
+            this.btnGenerateScriptFromData.Size = new System.Drawing.Size(439, 40);
+            this.btnGenerateScriptFromData.TabIndex = 10;
+            this.btnGenerateScriptFromData.Text = "データからスクリプトを作成";
+            this.btnGenerateScriptFromData.UseVisualStyleBackColor = true;
+            this.btnGenerateScriptFromData.Click += new System.EventHandler(this.btnGenerateScriptFromData_Click);
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 12F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(500, 380); // 高さを拡張
+            this.Controls.Add(this.btnGenerateScriptFromData); // Add this
             this.Controls.Add(this.btnGenerateClass);
             this.Controls.Add(this.btnBrowseTemplate);
             this.Controls.Add(this.txtTemplatePath);
@@ -184,5 +198,7 @@
         private System.Windows.Forms.TextBox txtTemplatePath;
         private System.Windows.Forms.Button btnBrowseTemplate;
         private System.Windows.Forms.Button btnGenerateClass;
+        // 新規追加
+        private System.Windows.Forms.Button btnGenerateScriptFromData;
     }
 }

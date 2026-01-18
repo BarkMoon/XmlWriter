@@ -301,7 +301,136 @@ namespace XmlWriter.Utility
             Console.WriteLine($"Generated Class: {outputPath}");
         }
 
-        // --- Logic Methods from Form1.cs (Adapted) ---
+        public static void GenerateScriptFromData(XLWorkbook workbook, string tableName, string outputDir, string template)
+        {
+            var table = workbook.Table(tableName);
+            var headers = table.HeadersRow().CellsUsed()
+                .Select(c => new ColumnInfo(c.GetValue<string>()))
+                .ToList();
+
+            // Prepare Data
+            // List of Dictionary<PropertyPath, Value>
+            var dataRows = new List<Dictionary<string, string>>();
+
+            foreach (var row in table.DataRange.Rows())
+            {
+                var rowDict = new Dictionary<string, string>();
+                int cellIndex = 0;
+                foreach (var cell in row.Cells())
+                {
+                    if (cellIndex >= headers.Count) break;
+                    var colInfo = headers[cellIndex];
+                    string val = cell.GetValue<string>();
+                    
+                    // Key: "Id", "Properties.Suit" etc.
+                    // ColumnInfo calculates PropertyName "Suit" and PathParts ["Properties", "Suit"].
+                    // We need the full dot-separated path as key.
+                    // Reconstruct from PathParts or use Original Header logic?
+                    // ColumnInfo constructor splits "Properties.Suit:string" -> PathParts.
+                    // Let's reconstruct key from PathParts.
+                    string key = string.Join(".", colInfo.PathParts);
+                    rowDict[key] = val;
+                    
+                    cellIndex++;
+                }
+                dataRows.Add(rowDict);
+            }
+
+            // Process Template
+            string finalCode = ProcessDataMacros(template, dataRows);
+            
+            // Allow @TableName macro in script template too
+            finalCode = finalCode.Replace("@TableName", tableName)
+                                 .Replace("@GeneratedDate", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"));
+
+            // Final Conditionals (in case any remaining outside loop)
+            finalCode = ProcessConditionals(finalCode);
+
+            // Newline normalization
+            finalCode = finalCode.Replace("\r\n", "\n").Replace("\n", "\r\n");
+
+            // Save
+            // Determining filename: [TableName]_Data.cs by default if not specified? 
+            // The requirement didn't specify filename format rigorously, implied part of "Script from Data" flow.
+            // We'll write to [outputDir]/code/[TableName]_Data.cs for consistency with GenerateClass
+            // OR simply [outputDir]/[TableName]_Data.cs.
+            // Form1 will likely pass a specific outputDir focused on where the file should go.
+            // But CommandRunner.Run (CLI) might call this too?
+            // "GenerateScriptFromData" is currently only for the GUI button per requirements.
+            // The method signature accepts `outputDir`.
+            
+            // If outputDir has extension (e.g. .cs), use it as full path.
+            // If it is a directory, append default filename.
+            string outputPath;
+            if (Path.HasExtension(outputDir))
+            {
+                outputPath = outputDir;
+                string dir = Path.GetDirectoryName(outputPath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            }
+            else
+            {
+                string dir = Path.Combine(outputDir, "code"); 
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                outputPath = Path.Combine(dir, $"{tableName}_Data.cs");
+            }
+            
+            File.WriteAllText(outputPath, finalCode, Encoding.UTF8);
+            Console.WriteLine($"Generated Script: {outputPath}");
+        }
+
+        private static string ProcessDataMacros(string template, List<Dictionary<string, string>> dataRows)
+        {
+            string startTag = "#ForAllData";
+            string endTag = "#EndForAllData";
+
+            while (true)
+            {
+                int startIdx = template.IndexOf(startTag);
+                if (startIdx == -1) break;
+
+                int endIdx = template.IndexOf(endTag, startIdx);
+                if (endIdx == -1) break;
+
+                int contentStart = startIdx + startTag.Length;
+                int contentLength = endIdx - contentStart;
+                string blockTemplate = template.Substring(contentStart, contentLength);
+                
+                blockTemplate = TrimStartNewline(blockTemplate);
+
+                StringBuilder loopContent = new StringBuilder();
+
+                foreach (var rowDict in dataRows)
+                {
+                    string instance = blockTemplate;
+                    
+                    // Substitute Variables ${Key}
+                    // We iterate keys in the row.
+                    foreach (var kvp in rowDict)
+                    {
+                        // Use regex or string replace?
+                        // String replace is simpler but might overlap if keys are substrings of others.
+                        // e.g. ${Id} and ${Identity}.
+                        // But syntax is ${Key}, so overlap is controlled by brackets.
+                        // Regular Replace "${Key}" should be safe.
+                        instance = instance.Replace($"${{{kvp.Key}}}", kvp.Value);
+                    }
+
+                    // Also process Conditionals for EACH row instance
+                    // Because #If(#Eq(${Id}, 1)) needs to be evaluated per row.
+                    instance = ProcessConditionals(instance);
+
+                    loopContent.Append(instance);
+                }
+
+                int removeEndIndex = GetRemoveEndIndex(template, endIdx + endTag.Length);
+                int removeLength = removeEndIndex - startIdx;
+
+                template = template.Remove(startIdx, removeLength).Insert(startIdx, loopContent.ToString());
+            }
+
+            return template;
+        }
 
         private static string ProcessTemplateMacros(string template, ClassNode rootNode, string rootTableName)
         {
@@ -472,10 +601,36 @@ namespace XmlWriter.Utility
 
                 int length = (endIndex + "#Endif".Length) - ifIndex;
                 int removeEndIndex = GetRemoveEndIndex(text, ifIndex + length);
-                int fullRemoveLength = removeEndIndex - ifIndex;
+                
+                // Fix: Also remove indentation before #If
+                int removeStartIndex = ifIndex;
+                int currentPos = ifIndex - 1;
+                while (currentPos >= 0)
+                {
+                    char c = text[currentPos];
+                    if (c == ' ' || c == '\t')
+                    {
+                        removeStartIndex = currentPos;
+                        currentPos--;
+                    }
+                    else if (c == '\n' || c == '\r')
+                    {
+                        // Found start of line (or just whitespace after newline)
+                        break;
+                    }
+                    else
+                    {
+                        // Found non-whitespace/non-newline char on same line
+                        // #If is inline, do NOT strip indentation
+                        removeStartIndex = ifIndex;
+                        break;
+                    }
+                }
+
+                int fullRemoveLength = removeEndIndex - removeStartIndex;
 
                 string result = SolveIfBlock(text.Substring(ifIndex, length));
-                text = text.Remove(ifIndex, fullRemoveLength).Insert(ifIndex, result);
+                text = text.Remove(removeStartIndex, fullRemoveLength).Insert(removeStartIndex, result);
             }
             return text;
         }

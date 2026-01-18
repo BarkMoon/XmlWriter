@@ -41,6 +41,7 @@ CLI実行時の中核ロジックを担当する静的クラスです。
 *   `ProcessConditionals(...)`: 条件分岐(`#If`)と式マクロ(`#Eq`等)を一括処理するエントリーポイントです。
 *   `ProcessExpressionMacros(...)`: 正規表現を用いて関数マクロ(`#Eq`等)を再帰的に評価・置換します。
 *   `ProcessIfBlocks(...)`: `#If` ～ `#Endif` のブロック構造を解析し、条件に合致するテキストブロックを抽出します。
+*   `ProcessDataMacros(...)`: `#ForAllData` ループを処理し、行データの変数(`${Id}`等)置換を行います。
 
 ### 3. XmlWriter.Form1 (GUI)
 Windows Forms画面の実装クラスです。
@@ -49,7 +50,9 @@ Windows Forms画面の実装クラスです。
 #### 主なイベントハンドラ
 *   `btnBrowse_Click`: Excelファイルの選択。INIから前回のフォルダパスを復元します。
 *   `btnGenerate_Click`: XML生成の実行。
+    *   フォルダ選択には標準の `FolderBrowserDialog` ではなく、Vistaスタイル（エクスプローラー形式）のUIを提供するため、`SaveFileDialog` をフォルダ選択モード風に流用する実装を行っています。ユーザーにはダミーファイル名の保存を促すことでフォルダパスを取得します。
 *   `btnGenerateClass_Click`: C#クラス生成の実行。
+*   `btnGenerateScriptFromData_Click`: データからのスクリプト生成実行。`SaveFileDialog` で出力先フォルダを選択し、`GenerateScriptFromData` を呼び出します。
 
 ## 依存ライブラリ
 

@@ -987,5 +987,72 @@ namespace XmlWriter
             public string TypeName { get; set; }
             public bool IsArray { get; set; } // ★ 追加
         }
+
+        // --- データからスクリプト生成 ---
+        private void btnGenerateScriptFromData_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(txtFilePath.Text) || cmbSheetName.SelectedItem == null) return;
+            string tableName = cmbSheetName.SelectedItem.ToString();
+            
+            // 1. テンプレートファイルを選択 (共通ロジック)
+            string templatePath;
+            if (!string.IsNullOrEmpty(txtTemplatePath.Text))
+            {
+                templatePath = txtTemplatePath.Text;
+            }
+            else
+            {
+                templatePath = Path.Combine(Application.StartupPath, "Template.cs");
+            }
+            
+            if (!File.Exists(templatePath))
+            {
+                MessageBox.Show($"テンプレートファイルが見つかりません。\nパス: {Path.GetFullPath(templatePath)}", "エラー");
+                return;
+            }
+
+            // 2. 出力先ファイルを選択 (SaveFileDialogを使用)
+            string outputPath = null;
+            using (SaveFileDialog sfd = new SaveFileDialog())
+            {
+                sfd.Title = "保存ファイル名を指定してください";
+                sfd.FileName = $"{tableName}_Data.cs";
+                sfd.Filter = "C# File|*.cs|All Files|*.*";
+                
+                string lastFolder = ini.Read("LastScriptOutputFolder");
+                if (!string.IsNullOrEmpty(lastFolder) && Directory.Exists(lastFolder))
+                {
+                    sfd.InitialDirectory = lastFolder;
+                }
+
+                if (sfd.ShowDialog() == DialogResult.OK)
+                {
+                    outputPath = sfd.FileName;
+                    ini.Write("LastScriptOutputFolder", Path.GetDirectoryName(outputPath));
+                }
+                else return;
+            }
+
+            try
+            {
+                UpdateStatus("スクリプト生成中...");
+                string templateContent = File.ReadAllText(templatePath, Encoding.UTF8);
+
+                // Helper Method call
+                // CommandRunner will handle output dir creation if needed, 
+                // but since we pass full path to CommandRunner (which was updated to handle it), this works.
+                using (var workbook = OpenWorkbookReadOnly(txtFilePath.Text))
+                {
+                    XmlWriter.Utility.CommandRunner.GenerateScriptFromData(workbook, tableName, outputPath, templateContent);
+                }
+
+                UpdateStatus("完了");
+                MessageBox.Show("スクリプト生成完了");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message);
+            }
+        }
     }
 }
