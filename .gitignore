@@ -38,6 +38,7 @@ packages/
 # Custom Output Directory
 # 今回のツールで生成されるXML出力フォルダ
 Output_XML/
+Test_Output/
 
 # Database files
 *.mdf

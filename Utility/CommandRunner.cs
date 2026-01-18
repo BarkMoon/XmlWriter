@@ -16,7 +16,8 @@ namespace XmlWriter.Utility
             All,
             Xml,
             Code,
-            List
+            List,
+            DataCode
         }
 
         public class RunOptions
@@ -31,46 +32,46 @@ namespace XmlWriter.Utility
         public static void Run(RunOptions options)
         {
             SetupLogger();
-            Log($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Start Execution");
-            Log($"Mode: {options.Mode}");
-            Log($"Excel: {options.ExcelPath}");
+            Log($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 実行開始");
+            Log($"モード: {options.Mode}");
+            Log($"Excelパス: {options.ExcelPath}");
             if (!string.IsNullOrEmpty(options.TargetTableName))
             {
-                Log($"Target Table: {options.TargetTableName}");
+                Log($"対象テーブル: {options.TargetTableName}");
             }
 
             if (!File.Exists(options.ExcelPath))
             {
-                throw new FileNotFoundException("Excel file not found", options.ExcelPath);
+                throw new FileNotFoundException("Excelファイルが見つかりません", options.ExcelPath);
             }
 
-            // Mode Check for required paths
-            if (options.Mode == ExecutionMode.Code || options.Mode == ExecutionMode.All)
+            // 必須パスのチェック
+            if (options.Mode == ExecutionMode.Code || options.Mode == ExecutionMode.All || options.Mode == ExecutionMode.DataCode)
             {
                 if (string.IsNullOrEmpty(options.TemplateFilePath) || !File.Exists(options.TemplateFilePath))
                 {
-                    throw new FileNotFoundException("Template file not found (Required for Code generation)", options.TemplateFilePath);
+                    throw new FileNotFoundException("テンプレートファイルが見つかりません（コード生成には必須です）", options.TemplateFilePath);
                 }
             }
 
             using (var workbook = OpenWorkbookReadOnly(options.ExcelPath))
             {
-                // List Mode
+                // リストモード
                 if (options.Mode == ExecutionMode.List)
                 {
                     ListTables(workbook);
                     return;
                 }
 
-                Log($"Output Directory: {options.OutputDir}");
-                if (options.Mode == ExecutionMode.Code || options.Mode == ExecutionMode.All)
+                Log($"出力ディレクトリ: {options.OutputDir}");
+                if (options.Mode == ExecutionMode.Code || options.Mode == ExecutionMode.All || options.Mode == ExecutionMode.DataCode)
                 {
-                    Log($"Template File: {options.TemplateFilePath}");
+                    Log($"テンプレートファイル: {options.TemplateFilePath}");
                 }
 
-                // Prepare Template Content
+                // テンプレート読み込み
                 string templateContent = null;
-                if (options.Mode == ExecutionMode.Code || options.Mode == ExecutionMode.All)
+                if (options.Mode == ExecutionMode.Code || options.Mode == ExecutionMode.All || options.Mode == ExecutionMode.DataCode)
                 {
                     templateContent = File.ReadAllText(options.TemplateFilePath, Encoding.UTF8);
                 }
@@ -90,19 +91,26 @@ namespace XmlWriter.Utility
                             }
                         }
 
-                        Log($"Processing Table: {tableName}");
+                        Log($"テーブル処理中: {tableName}");
 
-                        // 1. Generate XML
+                        // 1. XML生成
                         if (options.Mode == ExecutionMode.Xml || options.Mode == ExecutionMode.All)
                         {
                             GenerateXmlFromExcel(workbook, tableName, options.OutputDir, options.ExcelPath);
                         }
 
-                        // 2. Generate C#
+                        // 2. C#コード生成
                         if (options.Mode == ExecutionMode.Code || options.Mode == ExecutionMode.All)
                         {
-                            Log($"Generating Class using template: {Path.GetFileName(options.TemplateFilePath)}");
+                            Log($"テンプレートを使用してクラスを生成: {Path.GetFileName(options.TemplateFilePath)}");
                             GenerateCSharpFromTemplate(workbook, tableName, options.OutputDir, templateContent);
+                        }
+
+                        // 3. データスクリプト生成
+                        if (options.Mode == ExecutionMode.DataCode)
+                        {
+                            Log($"テンプレートを使用してデータスクリプトを生成: {Path.GetFileName(options.TemplateFilePath)}");
+                            GenerateScriptFromData(workbook, tableName, options.OutputDir, templateContent);
                         }
                     }
                 }
@@ -175,20 +183,7 @@ namespace XmlWriter.Utility
 
         private static void GenerateXmlFromExcel(XLWorkbook workbook, string tableName, string baseOutputDir, string excelFilePath)
         {
-            // Output path: <baseOutputDir> (User specified)
-            // Original tool logic: [ExcelDir]/Output_XML/[TableName]
-            // Modified logic: [baseOutputDir]/Output_XML/[TableName] ? No, User said "CardGameElements_Data\out"
-            // Let's output to [baseOutputDir]/[TableName]_XML/ or just [baseOutputDir] ?
-            // The tool originally creates a subdirectory "Output_XML/[TableName]".
-            // Let's respect the structure but put it inside baseOutputDir.
-            // Actually, the user asked to generate "xml data and source code under CardGameElements_Data\out".
-            // So maybe "out/xml/[TableName]" and "out/code/[TableName].cs"?
-            // Or "out/xml/[TableName]_[ID].xml" flatly?
-            // The original tool does: [Dir]/Output_XML/[TableName]/[TableName]_[ID].xml
-            // Let's do: [baseOutputDir]/xml/[TableName]/...
-            
-            // To match original behavior somewhat but adapt to "out folder":
-            // I'll create [baseOutputDir]/xml/[TableName] for XMLs.
+            // 元々のツールの挙動に合わせて、[baseOutputDir]/xml/[TableName] に出力します
             string outputDir = Path.Combine(baseOutputDir, "xml", tableName);
             if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
 
@@ -264,7 +259,7 @@ namespace XmlWriter.Utility
 
             string rootClassName = tableName;
             
-            // 1. Build Tree
+            // 1. ツリー構築
             var rootNode = new ClassNode(rootClassName, rootClassName);
             rootNode.IsRoot = true;
 
@@ -273,29 +268,29 @@ namespace XmlWriter.Utility
                 rootNode.AddPath(col.PathParts, col.TypeName, col.IsArray, rootClassName);
             }
 
-            // 2. Process Macros
+            // 2. マクロ処理
             string processedTemplate = ProcessTemplateMacros(template, rootNode, rootClassName);
 
-            // 3. Root Properties
+            // 3. ルートプロパティ
             string rootPropertiesCode = BuildPropertiesCodeOnly(rootNode, "        ");
 
-            // 4. Global Variables replacement
+            // 4. グローバル変数置換
             string finalCode = processedTemplate
                 .Replace("@TableName", rootClassName)
                 .Replace("@GeneratedDate", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"))
                 .Replace("@RootProperties", rootPropertiesCode.TrimEnd());
 
-            // 5. Final Conditionals
+            // 5. 最終条件分岐
             finalCode = ProcessConditionals(finalCode);
 
-            // 5.1 Erase Duplicates
+            // 5.1 重複行削除
             finalCode = ProcessEraseDuplicatedLines(finalCode);
 
-            // 6. Newline normalization
+            // 6. 改行コード正規化
             finalCode = finalCode.Replace("\r\n", "\n").Replace("\n", "\r\n");
 
-            // Save
-            // Output path: [baseOutputDir]/code/[TableName].cs
+            // 保存
+            // 出力パス: [baseOutputDir]/code/[TableName].cs
             string outputDir = Path.Combine(baseOutputDir, "code");
             if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
             
@@ -311,7 +306,7 @@ namespace XmlWriter.Utility
                 .Select(c => new ColumnInfo(c.GetValue<string>()))
                 .ToList();
 
-            // Prepare Data
+            // データ準備
             // List of Dictionary<PropertyPath, Value>
             var dataRows = new List<Dictionary<string, string>>();
 
@@ -325,12 +320,8 @@ namespace XmlWriter.Utility
                     var colInfo = headers[cellIndex];
                     string val = cell.GetValue<string>();
                     
-                    // Key: "Id", "Properties.Suit" etc.
-                    // ColumnInfo calculates PropertyName "Suit" and PathParts ["Properties", "Suit"].
-                    // We need the full dot-separated path as key.
-                    // Reconstruct from PathParts or use Original Header logic?
-                    // ColumnInfo constructor splits "Properties.Suit:string" -> PathParts.
-                    // Let's reconstruct key from PathParts.
+                    // キー: "Id", "Properties.Suit" など
+                    // ヘッダ情報からキーを再構築します
                     string key = string.Join(".", colInfo.PathParts);
                     rowDict[key] = val;
                     
@@ -339,34 +330,25 @@ namespace XmlWriter.Utility
                 dataRows.Add(rowDict);
             }
 
-            // Process Template
+            // テンプレート処理
             string finalCode = ProcessDataMacros(template, dataRows);
             
-            // Allow @TableName macro in script template too
+            // スクリプトテンプレートでも @TableName マクロを使用可能にします
             finalCode = finalCode.Replace("@TableName", tableName)
                                  .Replace("@GeneratedDate", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"));
 
-            // Final Conditionals (in case any remaining outside loop)
+            // 最終条件分岐（ループ外に残っている可能性があるため）
             finalCode = ProcessConditionals(finalCode);
 
-            // Erase Duplicates
+            // 重複行削除
             finalCode = ProcessEraseDuplicatedLines(finalCode);
 
-            // Newline normalization
+            // 改行コード正規化
             finalCode = finalCode.Replace("\r\n", "\n").Replace("\n", "\r\n");
 
-            // Save
-            // Determining filename: [TableName]_Data.cs by default if not specified? 
-            // The requirement didn't specify filename format rigorously, implied part of "Script from Data" flow.
-            // We'll write to [outputDir]/code/[TableName]_Data.cs for consistency with GenerateClass
-            // OR simply [outputDir]/[TableName]_Data.cs.
-            // Form1 will likely pass a specific outputDir focused on where the file should go.
-            // But CommandRunner.Run (CLI) might call this too?
-            // "GenerateScriptFromData" is currently only for the GUI button per requirements.
-            // The method signature accepts `outputDir`.
-            
-            // If outputDir has extension (e.g. .cs), use it as full path.
-            // If it is a directory, append default filename.
+            // 保存
+            // 出力パス: [baseOutputDir]/code/[TableName]_Data.cs
+            // baseOutputDir がファイル指定の場合はそのパスを使用
             string outputPath;
             if (Path.HasExtension(outputDir))
             {
@@ -410,20 +392,13 @@ namespace XmlWriter.Utility
                 {
                     string instance = blockTemplate;
                     
-                    // Substitute Variables ${Key}
-                    // We iterate keys in the row.
+                    // 変数置換 ${Key}
                     foreach (var kvp in rowDict)
                     {
-                        // Use regex or string replace?
-                        // String replace is simpler but might overlap if keys are substrings of others.
-                        // e.g. ${Id} and ${Identity}.
-                        // But syntax is ${Key}, so overlap is controlled by brackets.
-                        // Regular Replace "${Key}" should be safe.
                         instance = instance.Replace($"${{{kvp.Key}}}", kvp.Value);
                     }
 
-                    // Also process Conditionals for EACH row instance
-                    // Because #If(#Eq(${Id}, 1)) needs to be evaluated per row.
+                    // 行ごとに条件分岐も処理します
                     instance = ProcessConditionals(instance);
 
                     loopContent.Append(instance);
@@ -608,18 +583,19 @@ namespace XmlWriter.Utility
                 int endIdx = text.IndexOf(endTag, startIdx);
                 if (endIdx == -1) break;
 
-                // Expand startIdx to include the full line if possible
+
+
+                // startIdx を行全体を含むように拡張
                 int realStartIdx = startIdx;
                 int checkPos = startIdx - 1;
                 while (checkPos >= 0)
                 {
                     char c = text[checkPos];
-                    if (c == '\n' || c == '\r') break; // Found start of line
+                    if (c == '\n' || c == '\r') break; // 行頭（改行の後）
                     if (c != ' ' && c != '\t')
                     {
-                        // Found content on same line (e.g. "code(); #Erase")
-                        // In this case we CANNOT remove the whole line.
-                        // We revert to startIdx.
+                        // 同一行に他のコンテンツがある場合（例: "code(); #Erase"）
+                        // この場合は行全体を削除できません。
                         realStartIdx = startIdx;
                         break;
                     }
@@ -627,90 +603,52 @@ namespace XmlWriter.Utility
                     checkPos--;
                 }
                 
-                // Expand endIdx to include the full line end
+                // endIdx を行末まで拡張
                 int realEndIdx = endIdx + endTag.Length;
                 
-                // For end tag, we consume until newline
+                // endタグ後の改行まで含める
                 checkPos = realEndIdx;
                 while (checkPos < text.Length)
                 {
                     char c = text[checkPos];
                     if (c == '\n')
                     {
-                        realEndIdx = checkPos + 1; // Include \n
+                        realEndIdx = checkPos + 1; // \n を含める
                         break;
                     }
                     if (c == '\r')
                     {
-                        realEndIdx = checkPos + 1; // Include \r
+                        realEndIdx = checkPos + 1; // \r を含める
                          if (realEndIdx < text.Length && text[realEndIdx] == '\n')
-                            realEndIdx++; // Include \n in \r\n
+                            realEndIdx++; // \r\n の \n も含める
                         break;
                     }
                     if (c != ' ' && c != '\t')
                     {
-                        // Content after tag? Revert if needed, but #EndErase usually ends block.
-                        // Let's assume we strip trailing whitespace.
+                        // タグの後ろにコンテンツがある場合は何もしない（通常は #EndErase でブロックが終わるはず）
                     }
                     checkPos++;
                 }
 
+                // タグの内側のコンテンツを取得
                 int contentStart = startIdx + startTag.Length;
                 int contentLength = endIdx - contentStart;
                 
                 string content = text.Substring(contentStart, contentLength);
                 string processedContent = RemoveDuplicates(content);
-
-                // For start line, we found realStartIdx which is the start of indentation.
-                // We should also look forward from startTag to consume newline after it.
-                int afterStartTag = startIdx + startTag.Length;
-                int contentReplStart = afterStartTag;
                 
-                // consume newline after start tag
-                if (afterStartTag < text.Length && text[afterStartTag] == '\r') afterStartTag++;
-                if (afterStartTag < text.Length && text[afterStartTag] == '\n') afterStartTag++;
-                contentReplStart = afterStartTag;
-                
-                // Recalculate content for RemoveDuplicates to NOT include that first newline?
-                // The current Substring includes it. 
-                // RemoveDuplicates splits by ReadLine so it handles leading newline as an empty line.
-                // If the user's template is:
-                // #Erase
-                // Code
-                // The substring starts with \r\nCode.
-                // RemoveDuplicates sees (Empty), (Code).
-                // If we replace the whole block (realStartIdx to realEndIdx) with processedContent,
-                // we need to make sure processedContent doesn't have extra newlines.
-
-                // Let's refine Strategy:
-                // 1. Identify "Start Line" (indent + tag + newline)
-                // 2. Identify "End Line" (indent + tag + newline)
-                // 3. Extract content BETWEEN them.
-                // 4. Remove Start Line, End Line, and replace Content with Processed.
-
-                // Refinding realStartIdx, realEndIdx for "Whole Block including Tags"
-                // But we need to handle if tags are inline.
-                // If inline, regular behavior.
-                // If on own line, remove whole line.
-                
-                // Let's simplify:
-                // Remove text from realStartIdx to contentReplStart (This removes #Erase line)
-                // Remove text from endIdx to realEndIdx (This removes #EndErase line)
-                // Process content (middle).
-                
-                // Wait, easier to construct the new string.
-                
-                // 1. Scan back from startIdx for indentation.
+                // 開始行、終了行、および内側のコンテンツを置換対象とするための範囲計算
+                // 1. 開始タグ行のインデントをさかのぼる
                 int removeStart = startIdx;
                 bool removeStartLine = true;
                 for (int i = startIdx - 1; i >= 0; i--)
                 {
-                    if (text[i] == '\n' || text[i] == '\r') { removeStart = i + 1; break; } // Start of line found (after newline)
-                    if (text[i] != ' ' && text[i] != '\t') { removeStartLine = false; break; } // Not pure indent
-                    removeStart = i; // keep going back
+                    if (text[i] == '\n' || text[i] == '\r') { removeStart = i + 1; break; } // 改行の後（行頭）
+                    if (text[i] != ' ' && text[i] != '\t') { removeStartLine = false; break; } // インデント以外が含まれる
+                    removeStart = i;
                 }
                 
-                // 2. Scan forward from startTag for newline
+                // 2. 開始タグ後の改行まで進む
                 int removeStartEnd = startIdx + startTag.Length;
                 if (removeStartLine)
                 {
@@ -718,7 +656,7 @@ namespace XmlWriter.Utility
                     if (removeStartEnd < text.Length && text[removeStartEnd] == '\n') removeStartEnd++;
                 }
 
-                // 3. Scan back from endIdx for indentation (to remove EndErase indentation)
+                // 3. 終了タグ行のインデントをさかのぼる
                 int removeEndStart = endIdx;
                  bool removeEndLine = true;
                 for (int i = endIdx - 1; i >= removeStartEnd; i--)
@@ -728,7 +666,7 @@ namespace XmlWriter.Utility
                      removeEndStart = i;
                 }
                 
-                // 4. Scan forward from endTag for newline
+                // 4. 終了タグ後の改行まで進む
                 int removeEndEnd = endIdx + endTag.Length;
                 if (removeEndLine)
                 {
@@ -736,7 +674,7 @@ namespace XmlWriter.Utility
                      if (removeEndEnd < text.Length && text[removeEndEnd] == '\n') removeEndEnd++;
                 }
 
-                // If not full lines, we fall back to just removing the tags themselves
+                // 行全体でない場合は、純粋にタグ部分のみを削除対象とします
                 int finalStart = removeStartLine ? removeStart : startIdx;
                 int finalStartContent = removeStartLine ? removeStartEnd : (startIdx + startTag.Length);
                 
@@ -746,13 +684,7 @@ namespace XmlWriter.Utility
                 string innerContent = text.Substring(finalStartContent, finalEndContent - finalStartContent);
                 string processed = RemoveDuplicates(innerContent);
                 
-                // Construct result: 
-                // ...[Pre] + [Processed] + [Post]...
-                // replacing [finalStart ... finalEnd] with processed?
-                // No, replacing [finalStart ... finalEnd] means we are replacing "StartLine + Content + EndLine"
-                // with "Processed".
-                // Yes.
-                
+                // 置換実行
                 text = text.Remove(finalStart, finalEnd - finalStart).Insert(finalStart, processed);
             }
             return text;
@@ -760,8 +692,8 @@ namespace XmlWriter.Utility
 
         private static string RemoveDuplicates(string content)
         {
-            // Split by lines
-            // We want to preserve newlines structure.
+            // 行分割
+            // 元の改行構造を保持します
             var lines = new List<string>();
             using (StringReader sr = new StringReader(content))
             {
@@ -780,46 +712,17 @@ namespace XmlWriter.Utility
                 string line = lines[i];
                 string trimmed = line.Trim();
                 
-                // If empty line, we might want to keep it? or dedup it too?
-                // Usually blank lines are structural.
-                // If strict dedup:
+                // 空行の場合はどうするか？
+                // 通常、空行は構造的な意味を持つため維持したい場合が多いですが、
+                // 重複除去のコンテキストでは、連続する空行などを整理したい場合もあります。
+                // ここでは、「空行であっても、過去に出現していなければ出力」というロジックにします。
+                // ただし、Trim() した結果が同一であれば重複とみなします（インデント違いの空行など）。
                 if (string.IsNullOrWhiteSpace(trimmed))
                 {
-                    // keep blank lines? or dedup them?
-                    // "Erase Duplicated Line" usually targets code.
-                    // Let's dedup non-empty lines, keep empty lines?
-                    // Or dedup everything?
-                    // If I have:
-                    // Code
-                    // 
-                    // Code
-                    //
-                    // I want:
-                    // Code
-                    //
-                    // So dedup everything is probably what is expected for "Erase Duplicated Line".
-                    // But if multiple blank lines are desired for formatting, this might hurt.
-                    // However, safely, we can dedup everything.
-                    
                     if (!seen.Contains(trimmed))
                     {
                         seen.Add(trimmed);
                         result.AppendLine(line);
-                    }
-                    else
-                    {
-                        // If it's a blank line, maybe we allow duplicates if they are consecutive?
-                        // Or just simple unique filter.
-                        // Simple unique filter is the requirement: "duplicate lines... first one remains".
-                        
-                        // Wait, if "trimmed" is used as key, indentation differences are ignored?
-                        // "        using System;" vs "using System;"
-                        // If they are considered duplicate, we keep the first one.
-                        // This seems correct for "using" deduplication.
-                        
-                        // However, strictly speaking, different indentation might mean different logic scope.
-                        // But #EraseDuplicatedLine usually wraps top-level usings or similar.
-                        // Let's use Trimmed string as key.
                     }
                 }
                 else
@@ -831,8 +734,10 @@ namespace XmlWriter.Utility
                     }
                 }
             }
-            // Remove last newline if original didn't have it? 
-            // StringReader/AppendLine adds standard newlines.
+            // 末尾の改行を除去するか？
+            // StringReader/AppendLine は標準的な改行を追加します。
+            // 元の文字列の末尾状態を維持したいですが、AppendLineしているので末尾に改行がつきます。
+            // 結合時の不具合を防ぐため、そのまま返します。
             return result.ToString(); 
         }
 
@@ -849,7 +754,7 @@ namespace XmlWriter.Utility
                 int length = (endIndex + "#Endif".Length) - ifIndex;
                 int removeEndIndex = GetRemoveEndIndex(text, ifIndex + length);
                 
-                // Fix: Also remove indentation before #If
+                // 修正: #If の前のインデントも削除する
                 int removeStartIndex = ifIndex;
                 int currentPos = ifIndex - 1;
                 while (currentPos >= 0)
@@ -862,13 +767,13 @@ namespace XmlWriter.Utility
                     }
                     else if (c == '\n' || c == '\r')
                     {
-                        // Found start of line (or just whitespace after newline)
+                        // 行頭（または改行後の空白）が見つかった
                         break;
                     }
                     else
                     {
-                        // Found non-whitespace/non-newline char on same line
-                        // #If is inline, do NOT strip indentation
+                        // 同一行に非空白文字が見つかった
+                        // #If がインラインで記述されている場合はインデント削除を行わない
                         removeStartIndex = ifIndex;
                         break;
                     }

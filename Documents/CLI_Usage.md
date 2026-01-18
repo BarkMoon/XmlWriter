@@ -22,6 +22,7 @@ XmlWriter.exe <ExcelFilePath> -mode <Mode> [Options...]
 | `All` | XML生成とC#コード生成の両方を行います。（デフォルト） | `-output`, `-template` |
 | `Xml` | XML生成のみを行います。 | `-output` |
 | `Code` | C#コード生成のみを行います。 | `-output`, `-template` |
+| `DataCode` | データ行からのスクリプト生成（`GenerateScriptFromData`）を行います。 | `-output`, `-template` |
 | `List` | Excelファイル内のテーブル一覧をコンソールに出力します。 | なし |
 
 ### オプション引数
@@ -52,7 +53,15 @@ XmlWriter.exe "Data.xlsx" -m Xml -o "OutDir"
 XmlWriter.exe "Data.xlsx" -m Code -o "OutDir" -t "Template.cs" -target "Card_01"
 ```
 
-### 4. テーブル一覧の確認
+### 4. データスクリプトの生成
+
+全データの変数展開を行うスクリプトを生成します。
+
+```powershell
+XmlWriter.exe "Data.xlsx" -m DataCode -o "OutDir" -t "Template_Data.cs"
+```
+
+### 5. テーブル一覧の確認
 
 ```powershell
 XmlWriter.exe "Data.xlsx" -m List
