@@ -124,19 +124,55 @@ namespace XmlWriter
         private void btnGenerate_Click(object sender, EventArgs e)
         {
             if (string.IsNullOrEmpty(txtFilePath.Text) || cmbSheetName.SelectedItem == null) return;
+
+            string tableName = cmbSheetName.SelectedItem.ToString();
+            string outputDir = null;
+
+            // ★修正: ユーザー要望により SaveFileDialog を使用してフォルダを選択させる
+            // (SaveFileDialogならVistaスタイルのダイアログが出るため)
+            using (SaveFileDialog sfd = new SaveFileDialog())
+            {
+                sfd.Title = "XMLデータの出力先フォルダを選択してください (保存ボタンを押してください)";
+                sfd.FileName = "SelectFolder"; // ダミーファイル名
+                sfd.Filter = "Folder Selection|*.*";
+                sfd.CheckFileExists = false;
+                sfd.OverwritePrompt = false;
+
+                // INIから前回のフォルダを読み込んでセット
+                string lastFolder = ini.Read("LastXmlOutputFolder");
+                if (!string.IsNullOrEmpty(lastFolder) && Directory.Exists(lastFolder))
+                {
+                    sfd.InitialDirectory = lastFolder;
+                }
+
+                if (sfd.ShowDialog() == DialogResult.OK)
+                {
+                    // 選択されたファイルパスのディレクトリ部分を取得
+                    outputDir = Path.GetDirectoryName(sfd.FileName);
+                    
+                    // 選択したフォルダをINIに保存
+                    ini.Write("LastXmlOutputFolder", outputDir);
+                }
+                else
+                {
+                    return; // キャンセル時は何もしない
+                }
+            }
+
             try
             {
                 UpdateStatus("XML生成中...");
-                GenerateXmlFromExcel(txtFilePath.Text, cmbSheetName.SelectedItem.ToString());
+                GenerateXmlFromExcel(txtFilePath.Text, tableName, outputDir);
                 UpdateStatus("完了");
                 MessageBox.Show("XML生成完了");
             }
             catch (Exception ex) { MessageBox.Show(ex.Message); }
         }
 
-        private void GenerateXmlFromExcel(string filePath, string tableName)
+        private void GenerateXmlFromExcel(string filePath, string tableName, string baseOutputDir)
         {
-            string outputDir = Path.Combine(Path.GetDirectoryName(filePath), "Output_XML", tableName);
+            // 指定フォルダの中にテーブル名のフォルダを作成
+            string outputDir = Path.Combine(baseOutputDir, tableName);
             if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
 
             // ★ ヘルパーメソッドを使用
