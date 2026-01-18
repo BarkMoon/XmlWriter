@@ -288,6 +288,9 @@ namespace XmlWriter.Utility
             // 5. Final Conditionals
             finalCode = ProcessConditionals(finalCode);
 
+            // 5.1 Erase Duplicates
+            finalCode = ProcessEraseDuplicatedLines(finalCode);
+
             // 6. Newline normalization
             finalCode = finalCode.Replace("\r\n", "\n").Replace("\n", "\r\n");
 
@@ -345,6 +348,9 @@ namespace XmlWriter.Utility
 
             // Final Conditionals (in case any remaining outside loop)
             finalCode = ProcessConditionals(finalCode);
+
+            // Erase Duplicates
+            finalCode = ProcessEraseDuplicatedLines(finalCode);
 
             // Newline normalization
             finalCode = finalCode.Replace("\r\n", "\n").Replace("\n", "\r\n");
@@ -587,6 +593,247 @@ namespace XmlWriter.Utility
                 default:
                     return $"#{name}({argsStr})";
             }
+        }
+
+        private static string ProcessEraseDuplicatedLines(string text)
+        {
+            string startTag = "#EraseDuplicatedLine";
+            string endTag = "#EndErase";
+
+            while (true)
+            {
+                int startIdx = text.IndexOf(startTag);
+                if (startIdx == -1) break;
+
+                int endIdx = text.IndexOf(endTag, startIdx);
+                if (endIdx == -1) break;
+
+                // Expand startIdx to include the full line if possible
+                int realStartIdx = startIdx;
+                int checkPos = startIdx - 1;
+                while (checkPos >= 0)
+                {
+                    char c = text[checkPos];
+                    if (c == '\n' || c == '\r') break; // Found start of line
+                    if (c != ' ' && c != '\t')
+                    {
+                        // Found content on same line (e.g. "code(); #Erase")
+                        // In this case we CANNOT remove the whole line.
+                        // We revert to startIdx.
+                        realStartIdx = startIdx;
+                        break;
+                    }
+                    realStartIdx = checkPos;
+                    checkPos--;
+                }
+                
+                // Expand endIdx to include the full line end
+                int realEndIdx = endIdx + endTag.Length;
+                
+                // For end tag, we consume until newline
+                checkPos = realEndIdx;
+                while (checkPos < text.Length)
+                {
+                    char c = text[checkPos];
+                    if (c == '\n')
+                    {
+                        realEndIdx = checkPos + 1; // Include \n
+                        break;
+                    }
+                    if (c == '\r')
+                    {
+                        realEndIdx = checkPos + 1; // Include \r
+                         if (realEndIdx < text.Length && text[realEndIdx] == '\n')
+                            realEndIdx++; // Include \n in \r\n
+                        break;
+                    }
+                    if (c != ' ' && c != '\t')
+                    {
+                        // Content after tag? Revert if needed, but #EndErase usually ends block.
+                        // Let's assume we strip trailing whitespace.
+                    }
+                    checkPos++;
+                }
+
+                int contentStart = startIdx + startTag.Length;
+                int contentLength = endIdx - contentStart;
+                
+                string content = text.Substring(contentStart, contentLength);
+                string processedContent = RemoveDuplicates(content);
+
+                // For start line, we found realStartIdx which is the start of indentation.
+                // We should also look forward from startTag to consume newline after it.
+                int afterStartTag = startIdx + startTag.Length;
+                int contentReplStart = afterStartTag;
+                
+                // consume newline after start tag
+                if (afterStartTag < text.Length && text[afterStartTag] == '\r') afterStartTag++;
+                if (afterStartTag < text.Length && text[afterStartTag] == '\n') afterStartTag++;
+                contentReplStart = afterStartTag;
+                
+                // Recalculate content for RemoveDuplicates to NOT include that first newline?
+                // The current Substring includes it. 
+                // RemoveDuplicates splits by ReadLine so it handles leading newline as an empty line.
+                // If the user's template is:
+                // #Erase
+                // Code
+                // The substring starts with \r\nCode.
+                // RemoveDuplicates sees (Empty), (Code).
+                // If we replace the whole block (realStartIdx to realEndIdx) with processedContent,
+                // we need to make sure processedContent doesn't have extra newlines.
+
+                // Let's refine Strategy:
+                // 1. Identify "Start Line" (indent + tag + newline)
+                // 2. Identify "End Line" (indent + tag + newline)
+                // 3. Extract content BETWEEN them.
+                // 4. Remove Start Line, End Line, and replace Content with Processed.
+
+                // Refinding realStartIdx, realEndIdx for "Whole Block including Tags"
+                // But we need to handle if tags are inline.
+                // If inline, regular behavior.
+                // If on own line, remove whole line.
+                
+                // Let's simplify:
+                // Remove text from realStartIdx to contentReplStart (This removes #Erase line)
+                // Remove text from endIdx to realEndIdx (This removes #EndErase line)
+                // Process content (middle).
+                
+                // Wait, easier to construct the new string.
+                
+                // 1. Scan back from startIdx for indentation.
+                int removeStart = startIdx;
+                bool removeStartLine = true;
+                for (int i = startIdx - 1; i >= 0; i--)
+                {
+                    if (text[i] == '\n' || text[i] == '\r') { removeStart = i + 1; break; } // Start of line found (after newline)
+                    if (text[i] != ' ' && text[i] != '\t') { removeStartLine = false; break; } // Not pure indent
+                    removeStart = i; // keep going back
+                }
+                
+                // 2. Scan forward from startTag for newline
+                int removeStartEnd = startIdx + startTag.Length;
+                if (removeStartLine)
+                {
+                    if (removeStartEnd < text.Length && text[removeStartEnd] == '\r') removeStartEnd++;
+                    if (removeStartEnd < text.Length && text[removeStartEnd] == '\n') removeStartEnd++;
+                }
+
+                // 3. Scan back from endIdx for indentation (to remove EndErase indentation)
+                int removeEndStart = endIdx;
+                 bool removeEndLine = true;
+                for (int i = endIdx - 1; i >= removeStartEnd; i--)
+                {
+                     if (text[i] == '\n' || text[i] == '\r') { removeEndStart = i + 1; break; }
+                     if (text[i] != ' ' && text[i] != '\t') { removeEndLine = false; break; }
+                     removeEndStart = i;
+                }
+                
+                // 4. Scan forward from endTag for newline
+                int removeEndEnd = endIdx + endTag.Length;
+                if (removeEndLine)
+                {
+                     if (removeEndEnd < text.Length && text[removeEndEnd] == '\r') removeEndEnd++;
+                     if (removeEndEnd < text.Length && text[removeEndEnd] == '\n') removeEndEnd++;
+                }
+
+                // If not full lines, we fall back to just removing the tags themselves
+                int finalStart = removeStartLine ? removeStart : startIdx;
+                int finalStartContent = removeStartLine ? removeStartEnd : (startIdx + startTag.Length);
+                
+                int finalEndContent = removeEndLine ? removeEndStart : endIdx;
+                int finalEnd = removeEndLine ? removeEndEnd : (endIdx + endTag.Length);
+
+                string innerContent = text.Substring(finalStartContent, finalEndContent - finalStartContent);
+                string processed = RemoveDuplicates(innerContent);
+                
+                // Construct result: 
+                // ...[Pre] + [Processed] + [Post]...
+                // replacing [finalStart ... finalEnd] with processed?
+                // No, replacing [finalStart ... finalEnd] means we are replacing "StartLine + Content + EndLine"
+                // with "Processed".
+                // Yes.
+                
+                text = text.Remove(finalStart, finalEnd - finalStart).Insert(finalStart, processed);
+            }
+            return text;
+        }
+
+        private static string RemoveDuplicates(string content)
+        {
+            // Split by lines
+            // We want to preserve newlines structure.
+            var lines = new List<string>();
+            using (StringReader sr = new StringReader(content))
+            {
+                string line;
+                while ((line = sr.ReadLine()) != null)
+                {
+                    lines.Add(line);
+                }
+            }
+
+            var seen = new HashSet<string>();
+            var result = new StringBuilder();
+            
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string line = lines[i];
+                string trimmed = line.Trim();
+                
+                // If empty line, we might want to keep it? or dedup it too?
+                // Usually blank lines are structural.
+                // If strict dedup:
+                if (string.IsNullOrWhiteSpace(trimmed))
+                {
+                    // keep blank lines? or dedup them?
+                    // "Erase Duplicated Line" usually targets code.
+                    // Let's dedup non-empty lines, keep empty lines?
+                    // Or dedup everything?
+                    // If I have:
+                    // Code
+                    // 
+                    // Code
+                    //
+                    // I want:
+                    // Code
+                    //
+                    // So dedup everything is probably what is expected for "Erase Duplicated Line".
+                    // But if multiple blank lines are desired for formatting, this might hurt.
+                    // However, safely, we can dedup everything.
+                    
+                    if (!seen.Contains(trimmed))
+                    {
+                        seen.Add(trimmed);
+                        result.AppendLine(line);
+                    }
+                    else
+                    {
+                        // If it's a blank line, maybe we allow duplicates if they are consecutive?
+                        // Or just simple unique filter.
+                        // Simple unique filter is the requirement: "duplicate lines... first one remains".
+                        
+                        // Wait, if "trimmed" is used as key, indentation differences are ignored?
+                        // "        using System;" vs "using System;"
+                        // If they are considered duplicate, we keep the first one.
+                        // This seems correct for "using" deduplication.
+                        
+                        // However, strictly speaking, different indentation might mean different logic scope.
+                        // But #EraseDuplicatedLine usually wraps top-level usings or similar.
+                        // Let's use Trimmed string as key.
+                    }
+                }
+                else
+                {
+                    if (!seen.Contains(trimmed))
+                    {
+                        seen.Add(trimmed);
+                        result.AppendLine(line);
+                    }
+                }
+            }
+            // Remove last newline if original didn't have it? 
+            // StringReader/AppendLine adds standard newlines.
+            return result.ToString(); 
         }
 
         private static string ProcessIfBlocks(string text)
