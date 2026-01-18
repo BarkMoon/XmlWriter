@@ -93,6 +93,7 @@
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Utility\IniFile.cs" />
+    <Compile Include="Utility\CommandRunner.cs" />
     <None Include="Template.cs">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
