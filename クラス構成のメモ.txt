@@ -1,115 +1,49 @@
-using System.Collections;
-using XmlData;
+Excelロード拡張で、
+Functions.CardEffects:(EXテーブル名＝クラス名)[] = {1 (EXテーブル内のID), 2, }
 
-// SerializeData (IXmlData) のロード用のstaticなクラス。
-// ユーティリティとしてDataManager, CardDataManagerなどから切り離している。
-public static class SerializeDataLoader
-{
-    // filePathからXMLデータを読み込んで、serializeDataに出力する。
-    // 読み込み失敗時のserializeDataはnullにならず、デフォルト値になる。
-    public bool LoadSerializeData<T>(string filePath, out T serializeData)
-        where T : new(), IXmlData
-    {
-        bool success = false;
-        try
-        {
-            System.Xml.XmlDocument doc = new System.Xml.XmlDocument();
-    		doc.PreserveWhitespace = true;
-    		doc.Load(filePath);
 
-    		if (null == doc.DocumentElement) { throw new System.Exception($"[{filePath}] doc.DocumentElement == null"); }
 
-    		System.Xml.XmlNodeReader reader = new System.Xml.XmlNodeReader(doc.DocumentElement);
-            System.Xml.Serialization.XmlSerializer serializer = new System.Xml.Serialization.XmlSerializer(typeof(T));
+Cost.OriginalCost:string = "1G", "2GG", "3", "0":
+カードをプレイするための、元々のコスト。
+マナ色など、単なる数値でない場合があるため、数値でもstring扱いでPropertiesで保存。
+共通処理にマナ前提の処理は入れないと思うが、あっても0コストにすればよいので困りはしないかも。
 
-            serializeData = (T)serializer.Deserialize(reader);
-            success = true;
-        }
-        catch(System.Exception)
-        {
-            serializeData = new T();
-            success = false;
-        }
-        return success;
-    }
-}
+cardCost.PlayCost:string = "3G", "4GG", "5", "2":
+カードの効果などで色々付与した後のカードプレイコスト。
+墓地から唱える時に違うコストでプレイ可能になる場合なども、ここの数値が変わる。
+何も無ければOriginalCostと同じ。
 
-// カードデータだけ特殊なので、専用のCardDataManagerを置く。
-public class CardDataManager : Singleton<CardDataManager>
-{
-    // カードコレクションID → カードデータコレクションの辞書。
-    private Dictionary<int, CardDataCollection> cardCollectionDictionary;
+class/struct CardFunctionParameter = {This:CardClass, SubjectPlayer:PlayerClass, Target:ITargetObject(PlayerClass, CardClass, ZoneClass, ...), CastMode:CastModeEnum}:
+カード効果実行用のパラメータクラス。
+カードのOwnerと、効果を起動したSubjectPlayerは一致するとは限らない。
+CastMode=CastModeEnum.CheckOnlyであれば、効果を実際に実行はせずに返す。(「PayAllCostsで払えるかどうか」のみ見たい場合などに使う。)
 
-    public CardDataCollection GetCardDataCollection(int id)
-    {
-        CardDataCollection cardDataCollection;
-        if(CardIdToDataDictionary.TryGetValue(id, out cardDataCollection))
-        {
+Cost.PayAdditionalCost:Func<CardFunctionParameter, bool>:
+PlayCost以外のコスト(「クリーチャーを1体生贄に捧げる」「他のクリーチャーを1体タップする」などの複雑な効果)を払う。
+CastMode=CastModeEnum.CheckOnlyであれば、追加コストを払えるかのみチェック。払えればtrue。
+CastMode=CastModeEnum.Doであれば、コストを実際に払う。成功すればtrue。
+不要であればCardCollection.FuncNoneを指定する。
 
-            return cardDataCollection;
-        }
-        else
-        {
-            return null;
-        }
-    }
+Functions.PayAllCosts = Func<CardFunctionParameter, bool>:
+cardCost.PlayCostを払い (共通処理) 、Cost.AdditionalCost(parameter)を払う。
+CastMode=CastModeEnum.CheckOnlyであれば、全コストを払えるかのみチェック。払えればtrue。
+CastMode=CastModeEnum.Doであれば、コストを実際に払う。成功すればtrue。
 
-    public IXmlCardData GetXmlCardData(int cardDataCollectionId, int cardDataId)
-    {
-        var cardDataCollection = GetCardDataCollection(cardDataCollectionId);
-        if(cardDataCollection != null)
-        {
-            var cardData = cardDataCollection.GetCardDataFromId<IXmlCardData>(cardDataId);
-            return cardData;
-        }
-        else
-        {
-            return null;
-        }
-    }
+EffectGenreEnum { Activate, Auto, Permanent }:
+能力の種別。
+Activateは起動効果、Autoは自動誘発効果、Permanentは永続効果。
 
-    public IXmlCardData SearchXmlCardData(int cardDataId)
-    {
-        foreach(var kvp in cardCollectionDictionary)
-        {
-            CardDataCollection cardDataCollection = kvp.Value;
-            var searchedData = cardDataCollection.GetCardDataFromId<IXmlCardData>(id);
-            if(searchedData != null)
-            {
-                return searchedData;
-            }
-        }
-        return null;
-    }
-}
+class CardEffectClass = {EffectGenreEnum, CommonCost:string, PayAdditionalCost:Func<CardFunctionParameter, bool>, Function:Func<CardFunctionParameter, bool>}:
+CommonCostはPlayCostと同じ形式で、カード効果は"T"(このカードをタップする), "S"(このカードを墓地に送る)などはこちらに含めてもいいかも。
+PayAdditionalCostは同じ。
+Functionは効果。
+メソッドとしてPayAllCosts()を持つ。
 
-public class CardDataCollection
-{
-    // カードID → カードデータの辞書。
-    protected Dictionary<int, IXmlCardData> cardDataDictionary;
 
-    public void SetXmlCardData(int id, string filePath)
-    {
+例：
+並外れた語り部のアンタップ効果⇒{EffectGenreEnum.Activate, "1T", CardCollection.FuncNone, CardCollection.UntapOnePermanent}
+????食糧庫の備蓄の物資カウンターを置く効果⇒{EffectGenreEnum.Auto, "0", CardCollection.FuncNone, CardCollection.UntapOnePermanent}
+→自動効果はイベントをトリガーにするので、それは指定したい……。
 
-    }
-
-    public T GetCardDataFromId<T>(int id)
-        where T : IXmlCardData
-    {
-        IXmlCardData cardData;
-        if(cardDataDictionary.TryGetValue(id, out cardData))
-        {
-
-            return (T)cardData;
-        }
-        else
-        {
-            return null;
-        }    
-    }
-}
-
-public class CardDataCollection_Hanafuda : CardDataCollection
-{
-    static
-}
+cardFunctions.CardEffects:CardEffectClass[] = {CardEffectClass0, CardEffectClass1, ...}:
+カード効果のリスト。
