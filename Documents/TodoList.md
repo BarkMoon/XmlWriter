@@ -2,9 +2,9 @@
 
 ## 必須項目
 
-*   テーブル中のパラメータで、名前の頭に#が付いているパラメータについてはXMLに書き出しを行わず、無視するようにします。
-*   .xlsxに加えて.xlsmも読めるようにします。
-*   Param_A:Table_SubClass(ParamName)[]の表記の実装
+- [x] テーブル中のパラメータで、名前の頭に#が付いているパラメータについてはXMLに書き出しを行わず、無視するようにします。
+- [x] .xlsxに加えて.xlsmも読めるようにします。
+- [x] Param_A:Table_SubClass(ParamName)[]の表記の実装
     * このParam_Aが含まれるテーブルをTable_Aとしたとき、これはTable_SubClassという名称のテーブルのParamName行を検索して、一致するものがあればその行全体のデータをサブクラスとして埋め込みます。
     * 例えば、Table_AがパラメータId:int, Name.OriginalName, Properties.Abilities:Table_SubClass(Name:string)[]を持ち、Table_SubClassがパラメータId:int, Name:string, FuncName:stringを持つとします。
     このとき、Table_Aの行

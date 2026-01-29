@@ -56,6 +56,10 @@ namespace XmlWriter.Utility
 
             using (var workbook = OpenWorkbookReadOnly(options.ExcelPath))
             {
+                // キャッシュクリア
+                _headerCache.Clear();
+                _tableIndexCache.Clear();
+
                 // リストモード
                 if (options.Mode == ExecutionMode.List)
                 {
@@ -181,62 +185,75 @@ namespace XmlWriter.Utility
             return new XLWorkbook(fs);
         }
 
+        private static Dictionary<string, List<ColumnInfo>> _headerCache = new Dictionary<string, List<ColumnInfo>>();
+        private static Dictionary<string, Dictionary<string, IXLRangeRow>> _tableIndexCache = new Dictionary<string, Dictionary<string, IXLRangeRow>>();
+
+        private static List<ColumnInfo> GetHeaders(XLWorkbook workbook, string tableName)
+        {
+            if (_headerCache.TryGetValue(tableName, out var cached)) return cached;
+
+            var table = workbook.Table(tableName);
+            var headers = table.HeadersRow().CellsUsed()
+                .Where(c => !c.GetValue<string>().TrimStart().StartsWith("#"))
+                .Select(c => new ColumnInfo(c.GetValue<string>()) { ColumnNumber = c.WorksheetColumn().ColumnNumber() })
+                .ToList();
+            
+            _headerCache[tableName] = headers;
+            return headers;
+        }
+
+        private static IXLRangeRow FindRow(XLWorkbook workbook, string tableName, string keyColumn, string value)
+        {
+            string cacheKey = tableName + "::" + keyColumn;
+            if (!_tableIndexCache.TryGetValue(cacheKey, out var index))
+            {
+                index = new Dictionary<string, IXLRangeRow>();
+                var table = workbook.Table(tableName);
+                var headers = GetHeaders(workbook, tableName);
+                
+                var keyColInfo = headers.FirstOrDefault(h => h.PropertyName.Equals(keyColumn, StringComparison.OrdinalIgnoreCase));
+                
+                if (keyColInfo != null)
+                {
+                    foreach (var row in table.DataRange.Rows())
+                    {
+                        try
+                        {
+                            // 行全体が空の場合はスキップ
+                            if (row.IsEmpty()) continue;
+
+                            string val = row.WorksheetRow().Cell(keyColInfo.ColumnNumber).GetValue<string>();
+                            if (!index.ContainsKey(val)) index[val] = row;
+                        }
+                        catch { }
+                    }
+                }
+                _tableIndexCache[cacheKey] = index;
+            }
+
+            if (index.TryGetValue(value, out var foundRow)) return foundRow;
+            return null;
+        }
+
         private static void GenerateXmlFromExcel(XLWorkbook workbook, string tableName, string baseOutputDir, string excelFilePath)
         {
-            // 元々のツールの挙動に合わせて、[baseOutputDir]/xml/[TableName] に出力します
             string outputDir = Path.Combine(baseOutputDir, "xml", tableName);
             if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
 
             var table = workbook.Table(tableName);
-            var headers = table.HeadersRow().CellsUsed()
-                .Select(c => new ColumnInfo(c.GetValue<string>()))
-                .ToList();
-
+            var headers = GetHeaders(workbook, tableName);
+            
             foreach (var row in table.DataRange.Rows())
             {
-                XElement rootElement = new XElement("Record");
+                XElement rootElement = CreateElementFromRow(row, headers, workbook, "Record");
+                
+                // ID取得（ファイル名用）
                 string idValue = null;
-                int cellIndex = 0;
-
-                foreach (var cell in row.Cells())
+                var idCol = headers.FirstOrDefault(h => h.PropertyName.Equals("ID", StringComparison.OrdinalIgnoreCase));
+                if (idCol != null)
                 {
-                    if (cellIndex >= headers.Count) break;
-                    var colInfo = headers[cellIndex];
-                    string rawVal = cell.GetValue<string>();
-
-                    XElement targetParent = rootElement;
-                    for (int i = 0; i < colInfo.PathParts.Length - 1; i++)
-                    {
-                        string partName = colInfo.PathParts[i];
-                        XElement existing = targetParent.Element(partName);
-                        if (existing == null)
-                        {
-                            existing = new XElement(partName);
-                            targetParent.Add(existing);
-                        }
-                        targetParent = existing;
-                    }
-
-                    if (colInfo.IsArray)
-                    {
-                        if (!string.IsNullOrWhiteSpace(rawVal))
-                        {
-                            var values = rawVal.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-                            foreach (var val in values)
-                            {
-                                targetParent.Add(new XElement(colInfo.PropertyName, val.Trim()));
-                            }
-                        }
-                    }
-                    else
-                    {
-                        targetParent.Add(new XElement(colInfo.PropertyName, rawVal));
-                    }
-
-                    if (colInfo.PropertyName.Equals("ID", StringComparison.OrdinalIgnoreCase)) idValue = rawVal;
-                    cellIndex++;
+                     idValue = row.WorksheetRow().Cell(idCol.ColumnNumber).GetValue<string>();
                 }
-
                 if (string.IsNullOrEmpty(idValue)) idValue = row.WorksheetRow().RowNumber().ToString();
 
                 string formattedId = idValue;
@@ -250,11 +267,73 @@ namespace XmlWriter.Utility
             Console.WriteLine($"Generated XMLs in {outputDir}");
         }
 
+        private static XElement CreateElementFromRow(IXLRangeRow row, List<ColumnInfo> headers, XLWorkbook workbook, string elementName)
+        {
+            XElement rootElement = new XElement(elementName);
+
+            foreach (var colInfo in headers)
+            {
+                string rawVal = row.WorksheetRow().Cell(colInfo.ColumnNumber).GetValue<string>();
+                
+                XElement targetParent = rootElement;
+                for (int i = 0; i < colInfo.PathParts.Length - 1; i++)
+                {
+                    string partName = colInfo.PathParts[i];
+                    XElement existing = targetParent.Element(partName);
+                    if (existing == null)
+                    {
+                        existing = new XElement(partName);
+                        targetParent.Add(existing);
+                    }
+                    targetParent = existing;
+                }
+
+                if (colInfo.RefTableName != null)
+                {
+                    // テーブル参照の場合
+                    if (!string.IsNullOrWhiteSpace(rawVal))
+                    {
+                        var keys = rawVal.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var key in keys)
+                        {
+                            var trimmedKey = key.Trim();
+                            var targetRow = FindRow(workbook, colInfo.RefTableName, colInfo.RefKeyColumn, trimmedKey);
+                            if (targetRow != null)
+                            {
+                                var targetHeaders = GetHeaders(workbook, colInfo.RefTableName);
+                                // 再帰呼び出し。要素名はプロパティ名とする
+                                var childElement = CreateElementFromRow(targetRow, targetHeaders, workbook, colInfo.PropertyName);
+                                targetParent.Add(childElement);
+                            }
+                        }
+                    }
+                }
+                else if (colInfo.IsArray)
+                {
+                    if (!string.IsNullOrWhiteSpace(rawVal))
+                    {
+                        var values = rawVal.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var val in values)
+                        {
+                            targetParent.Add(new XElement(colInfo.PropertyName, val.Trim()));
+                        }
+                    }
+                }
+                else
+                {
+                    targetParent.Add(new XElement(colInfo.PropertyName, rawVal));
+                }
+            }
+            return rootElement;
+        }
+
         private static void GenerateCSharpFromTemplate(XLWorkbook workbook, string tableName, string baseOutputDir, string template)
         {
             var table = workbook.Table(tableName);
             var headers = table.HeadersRow().CellsUsed()
-                .Select(c => new ColumnInfo(c.GetValue<string>()))
+                .Select(c => c.GetValue<string>())
+                .Where(h => !h.TrimStart().StartsWith("#")) // #で始まる列を無視
+                .Select(h => new ColumnInfo(h))
                 .ToList();
 
             string rootClassName = tableName;
@@ -303,7 +382,9 @@ namespace XmlWriter.Utility
         {
             var table = workbook.Table(tableName);
             var headers = table.HeadersRow().CellsUsed()
-                .Select(c => new ColumnInfo(c.GetValue<string>()))
+                .Select(c => c.GetValue<string>())
+                .Where(h => !h.TrimStart().StartsWith("#")) // #で始まる列を無視
+                .Select(h => new ColumnInfo(h))
                 .ToList();
 
             // データ準備
@@ -946,6 +1027,7 @@ namespace XmlWriter.Utility
         private static string ConvertType(string typeName, bool isArray)
         {
             string baseType;
+            // プリミティブ型判定（小文字で比較）
             switch (typeName.ToLower())
             {
                 case "int": baseType = "int"; break;
@@ -955,7 +1037,11 @@ namespace XmlWriter.Utility
                 case "bool": baseType = "bool"; break;
                 case "date":
                 case "datetime": baseType = "DateTime"; break;
-                default: baseType = "string"; break;
+                case "string": baseType = "string"; break;
+                default: 
+                    // 既知の型以外はそのまま（クラス名として）扱う
+                    baseType = typeName; 
+                    break;
             }
             return isArray ? $"List<{baseType}>" : baseType;
         }
@@ -968,27 +1054,54 @@ namespace XmlWriter.Utility
             public string TypeName { get; set; }
             public bool IsArray { get; set; }
             
+            // 参照テーブル情報
+            public string RefTableName { get; set; }
+            public string RefKeyColumn { get; set; }
+            public int ColumnNumber { get; set; } // 1-based absolute column number
+
             public ColumnInfo(string header)
             {
                 OriginalHeader = header;
                 string namePart = header;
                 TypeName = "string";
                 IsArray = false;
+                RefTableName = null;
+                RefKeyColumn = null;
+                ColumnNumber = 0;
+
                 if (header.Contains(":"))
                 {
-                    var parts = header.Split(':');
+                    var parts = header.Split(new[] { ':' }, 2);
                     namePart = parts[0].Trim();
                     if (parts.Length > 1)
                     {
-                        string typeRaw = parts[1].Trim().ToLower();
-                        if (typeRaw.EndsWith("[]"))
+                        string typePart = parts[1].Trim();
+                        // 構文解析: TableName(KeyName)[] 
+                        // Regexでの抽出
+                        // 例: Table_SubClass(ParamName)[] -> Group1:Table_SubClass, Group2:ParamName, Group3:[]
+                        var match = Regex.Match(typePart, @"^([^\(]+)\(([^\)]+)\)(\[\])?$");
+                        
+                        if (match.Success)
                         {
-                            IsArray = true;
-                            TypeName = typeRaw.Replace("[]", "");
+                            TypeName = match.Groups[1].Value;
+                            RefTableName = TypeName;
+                            RefKeyColumn = match.Groups[2].Value;
+                            if (RefKeyColumn.Contains(":")) RefKeyColumn = RefKeyColumn.Split(':')[0].Trim();
+                            IsArray = match.Groups[3].Success;
                         }
                         else
                         {
-                            TypeName = typeRaw;
+                            // 従来の型指定
+                            string typeRaw = typePart;
+                            if (typeRaw.EndsWith("[]"))
+                            {
+                                IsArray = true;
+                                TypeName = typeRaw.Substring(0, typeRaw.Length - 2);
+                            }
+                            else
+                            {
+                                TypeName = typeRaw;
+                            }
                         }
                     }
                 }

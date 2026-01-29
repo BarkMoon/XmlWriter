@@ -11,7 +11,7 @@
 XmlWriter.exe <ExcelFilePath> -mode <Mode> [Options...]
 ```
 
-第1引数にExcelファイルのパスを指定し、以降のオプションで動作を制御します。
+第1引数にExcelファイル（`.xlsx` または `.xlsm`）のパスを指定し、以降のオプションで動作を制御します。
 
 ### モード (`-mode` / `-m`)
 
