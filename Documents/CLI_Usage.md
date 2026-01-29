@@ -29,7 +29,7 @@ XmlWriter.exe <ExcelFilePath> -mode <Mode> [Options...]
 
 | オプション (短縮) | 引数 | 説明 |
 | :--- | :--- | :--- |
-| `-output` (`-o`) | `<DirPath>` | 出力先ディレクトリのパス。`output/xml` や `output/code` が作成されます。 |
+| `-output` (`-o`) | `<DirPath>` | 出力先ディレクトリのパス。`<DirPath>/<TableName>/...` にXMLが出力され、`<DirPath>/code/` にコードが出力されます。 |
 | `-template` (`-t`) | `<FilePath>` | C#コード生成に使用するテンプレートファイルのパス。Code/Allモードで必須。 |
 | `-target` (`-table`) | `<TableName>` | 特定のテーブルのみを処理対象にする場合にテーブル名を指定します。省略時は全テーブル対象。 |
 
@@ -76,6 +76,6 @@ System_Config
 
 ## 注意事項
 
-*   出力先ディレクトリ構成 (`xml/` および `code/`) は維持されます。
+*   出力先ディレクトリ構成: XMLは `<OutDir>/<TableName>/...` に、コードは `<OutDir>/code/` に出力されます。
 *   `List` モードは結果を標準出力 (Stdout) に返します。他のツールとパイプで連携可能です。
 *   ファイルパス等に空白が含まれる場合は、ダブルクォーテーション `"` で囲んでください。

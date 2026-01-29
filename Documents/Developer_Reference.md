@@ -45,7 +45,7 @@ CLI実行時の中核ロジックを担当する静的クラスです。
 
 ### 3. XmlWriter.Form1 (GUI)
 Windows Forms画面の実装クラスです。
-※ 現状、`CommandRunner` と `Form1` で処理ロジックのコードが重複している部分があります。将来的な保守の際は、共通ロジックを別クラス(`CoreLogic` 等)に切り出すリファクタリングが推奨されます。
+※ 以前は `CommandRunner` と `Form1` で処理が重複していましたが、リファクタリングにより主要なビジネスロジックは `CommandRunner` に集約されました。`Form1` はUI操作のみを担当し、実際の処理は `CommandRunner` に委譲しています。
 
 #### 主なイベントハンドラ
 *   `btnBrowse_Click`: Excelファイルの選択。INIから前回のフォルダパスを復元します。

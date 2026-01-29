@@ -135,6 +135,13 @@ namespace XmlWriter.Utility
 
         private static string _logFilePath;
 
+        private static Action<string> _externalLogger;
+
+        public static void SetExternalLogger(Action<string> logger)
+        {
+            _externalLogger = logger;
+        }
+
         private static void SetupLogger()
         {
             try
@@ -164,6 +171,7 @@ namespace XmlWriter.Utility
         private static void Log(string message)
         {
             Console.WriteLine(message);
+            _externalLogger?.Invoke(message);
             LogFileOnly(message);
         }
 
@@ -179,7 +187,7 @@ namespace XmlWriter.Utility
             }
         }
 
-        private static XLWorkbook OpenWorkbookReadOnly(string path)
+        public static XLWorkbook OpenWorkbookReadOnly(string path)
         {
             FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             return new XLWorkbook(fs);
@@ -235,9 +243,9 @@ namespace XmlWriter.Utility
             return null;
         }
 
-        private static void GenerateXmlFromExcel(XLWorkbook workbook, string tableName, string baseOutputDir, string excelFilePath)
+        public static void GenerateXmlFromExcel(XLWorkbook workbook, string tableName, string baseOutputDir, string excelFilePath)
         {
-            string outputDir = Path.Combine(baseOutputDir, "xml", tableName);
+            string outputDir = Path.Combine(baseOutputDir, tableName);
             if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
 
             var table = workbook.Table(tableName);
@@ -327,7 +335,21 @@ namespace XmlWriter.Utility
             return rootElement;
         }
 
-        private static void GenerateCSharpFromTemplate(XLWorkbook workbook, string tableName, string baseOutputDir, string template)
+        public static void GenerateCSharpFromTemplate(XLWorkbook workbook, string tableName, string baseOutputDir, string template)
+        {
+            string finalCode = GenerateCSharpCode(workbook, tableName, template);
+
+            // 保存
+            // 出力パス: [baseOutputDir]/code/[TableName].cs
+            string outputDir = Path.Combine(baseOutputDir, "code");
+            if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
+            
+            string outputPath = Path.Combine(outputDir, $"{tableName}.cs");
+            File.WriteAllText(outputPath, finalCode, Encoding.UTF8);
+            Console.WriteLine($"Generated Class: {outputPath}");
+        }
+
+        public static string GenerateCSharpCode(XLWorkbook workbook, string tableName, string template)
         {
             var table = workbook.Table(tableName);
             var headers = table.HeadersRow().CellsUsed()
@@ -366,16 +388,7 @@ namespace XmlWriter.Utility
             finalCode = ProcessEraseDuplicatedLines(finalCode);
 
             // 6. 改行コード正規化
-            finalCode = finalCode.Replace("\r\n", "\n").Replace("\n", "\r\n");
-
-            // 保存
-            // 出力パス: [baseOutputDir]/code/[TableName].cs
-            string outputDir = Path.Combine(baseOutputDir, "code");
-            if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
-            
-            string outputPath = Path.Combine(outputDir, $"{tableName}.cs");
-            File.WriteAllText(outputPath, finalCode, Encoding.UTF8);
-            Console.WriteLine($"Generated Class: {outputPath}");
+            return finalCode.Replace("\r\n", "\n").Replace("\n", "\r\n");
         }
 
         public static void GenerateScriptFromData(XLWorkbook workbook, string tableName, string outputDir, string template)
