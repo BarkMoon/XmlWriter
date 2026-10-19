@@ -24,7 +24,7 @@
 *   **`@GeneratedDate`**: 生成日時（`yyyy/MM/dd HH:mm:ss`）。
 
 ### クラス生成用の変数
-*   **`@RootProperties`**: ルートクラス直下のプロパティ定義（`[XmlElement(...)]` 付きのC#プロパティ群）が自動生成されて展開されます。ドットを含まないヘッダ、およびサブクラスへの参照プロパティが対象です。
+*   **`@RootProperties`**: ルートクラス直下のプロパティ定義（`[XmlElement(...)]` 付きのC#プロパティ群）が自動生成されて展開されます。ドットを含まないヘッダ、およびサブクラス（ネスト・テーブル参照）への参照プロパティが対象です。**定義順はExcelの列（左→右）の順序を保持します。**
 *   **`@SubClassName`**: 現在処理中のサブクラスのC#クラス名（親を連結した一意名。例: `CardData_Status`）。`#ForAllSubClasses` ブロック内で有効。
 *   **`@SubClassTagName`**: そのサブクラスの元のXMLタグ名（例: `Status`）。`#ForAllSubClasses` ブロック内で有効。
 *   **`@SubClassPropertyName`**: 現在処理中のプロパティ名。`#ForAllSubClassProperties` ブロック内で有効。
@@ -119,6 +119,7 @@ Excelの1行目（ヘッダ行）で使える特殊記法です。
     3.  一致した行のデータを `プロパティ名` 配下にXMLとして展開する（C#クラス生成では `List<参照テーブル名>` 型）
 *   例: `Abilities:AbilityTable(Name)[]`
     *   セル値が `Fire, Ice` の場合、`AbilityTable` から `Name` が `Fire`・`Ice` の行を探し、`Abilities` タグ配下に展開します。
+*   **C#クラス生成では、参照先テーブルの構造が `参照テーブル名` という名前のサブクラスとして（再帰的に）生成され、`#ForAllSubClasses` / `#ForAllSubClassProperties` でも列挙できます。** ルート側のプロパティは配列指定（`[]`）なら `List<参照テーブル名>` 型になります。参照先テーブルの `#` 始まり列は無視されます。
 
 ---
 

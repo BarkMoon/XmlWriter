@@ -359,14 +359,16 @@ namespace XmlWriter.Utility
                 .ToList();
 
             string rootClassName = tableName;
-            
-            // 1. ツリー構築
+
+            // 1. ツリー構築（列の左→右の順序を保持。別テーブル参照はその構造をサブクラスとして展開）
             var rootNode = new ClassNode(rootClassName, rootClassName);
             rootNode.IsRoot = true;
 
+            // 参照の循環を防ぐため、ルートテーブル名を起点に訪問済み集合を管理する。
+            var visitedTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rootClassName };
             foreach (var col in headers)
             {
-                rootNode.AddPath(col.PathParts, col.TypeName, col.IsArray, rootClassName);
+                AddColumnToNode(rootNode, col.PathParts, 0, col, workbook, visitedTables);
             }
 
             // 2. マクロ処理
@@ -572,11 +574,15 @@ namespace XmlWriter.Utility
 
                 StringBuilder loopContent = new StringBuilder();
 
+                // 列の出現順（Members）で列挙する。
                 var allProperties = new List<dynamic>();
-                foreach (var prop in node.Properties)
-                    allProperties.Add(new { Name = prop.Name, Type = ConvertType(prop.TypeName, prop.IsArray) });
-                foreach (var child in node.Children)
-                    allProperties.Add(new { Name = child.XmlTagName, Type = child.ClassName });
+                foreach (var member in node.Members)
+                {
+                    if (member.IsChild)
+                        allProperties.Add(new { Name = member.Child.XmlTagName, Type = MemberTypeName(member.Child) });
+                    else
+                        allProperties.Add(new { Name = member.Property.Name, Type = ConvertType(member.Property.TypeName, member.Property.IsArray) });
+                }
 
                 foreach (var prop in allProperties)
                 {
@@ -1020,19 +1026,85 @@ namespace XmlWriter.Utility
             return idx;
         }
 
+        /// <summary>
+        /// 1列分をクラスツリーへ追加する。ドット区切りは中間サブクラスを生成し、
+        /// 末端が別テーブル参照（RefTableName あり）の場合は参照先テーブルの構造を
+        /// サブクラスとして（再帰的に）展開する。メンバは列の出現順で保持する。
+        /// </summary>
+        private static void AddColumnToNode(ClassNode node, string[] parts, int index, ColumnInfo col, XLWorkbook workbook, HashSet<string> visitedTables)
+        {
+            string partName = parts[index];
+            bool isLeaf = index == parts.Length - 1;
+
+            if (!isLeaf)
+            {
+                // 中間ノード（例: Status.Month の "Status"）
+                var mid = node.Children.FirstOrDefault(c => c.XmlTagName == partName);
+                if (mid == null)
+                {
+                    mid = new ClassNode(partName, $"{node.ClassName}_{partName}");
+                    node.Children.Add(mid);
+                    node.Members.Add(new Member { Child = mid });
+                }
+                AddColumnToNode(mid, parts, index + 1, col, workbook, visitedTables);
+                return;
+            }
+
+            // 末端
+            if (col.RefTableName != null)
+            {
+                // 別テーブル参照: 参照先の構造をサブクラスとして展開する。
+                if (node.Children.Any(c => c.XmlTagName == partName)) return;
+
+                var refNode = new ClassNode(partName, col.RefTableName) { IsCollection = col.IsArray };
+                node.Children.Add(refNode);
+                node.Members.Add(new Member { Child = refNode });
+
+                if (!visitedTables.Contains(col.RefTableName))
+                {
+                    visitedTables.Add(col.RefTableName);
+                    List<ColumnInfo> refHeaders;
+                    try { refHeaders = GetHeaders(workbook, col.RefTableName); }
+                    catch { refHeaders = new List<ColumnInfo>(); }
+                    foreach (var rc in refHeaders)
+                    {
+                        AddColumnToNode(refNode, rc.PathParts, 0, rc, workbook, visitedTables);
+                    }
+                    visitedTables.Remove(col.RefTableName);
+                }
+            }
+            else
+            {
+                var prop = new PropertyNode { Name = partName, TypeName = col.TypeName, IsArray = col.IsArray };
+                node.Properties.Add(prop);
+                node.Members.Add(new Member { Property = prop });
+            }
+        }
+
+        private static string MemberTypeName(ClassNode child)
+        {
+            return child.IsCollection ? $"List<{child.ClassName}>" : child.ClassName;
+        }
+
         private static string BuildPropertiesCodeOnly(ClassNode node, string indent)
         {
             var allItems = new List<string>();
-            foreach (var prop in node.Properties)
+            // 列の出現順（Members）で定義する。
+            foreach (var member in node.Members)
             {
-                string type = ConvertType(prop.TypeName, prop.IsArray);
-                string item = $"{indent}[XmlElement(\"{prop.Name}\")]\n{indent}public {type} {prop.Name} {{ get; set; }}";
-                allItems.Add(item);
-            }
-            foreach (var child in node.Children)
-            {
-                string item = $"{indent}[XmlElement(\"{child.XmlTagName}\")]\n{indent}public {child.ClassName} {child.XmlTagName} {{ get; set; }}";
-                allItems.Add(item);
+                if (member.IsChild)
+                {
+                    var child = member.Child;
+                    string item = $"{indent}[XmlElement(\"{child.XmlTagName}\")]\n{indent}public {MemberTypeName(child)} {child.XmlTagName} {{ get; set; }}";
+                    allItems.Add(item);
+                }
+                else
+                {
+                    var prop = member.Property;
+                    string type = ConvertType(prop.TypeName, prop.IsArray);
+                    string item = $"{indent}[XmlElement(\"{prop.Name}\")]\n{indent}public {type} {prop.Name} {{ get; set; }}";
+                    allItems.Add(item);
+                }
             }
             return string.Join("\n\n", allItems);
         }
@@ -1128,32 +1200,27 @@ namespace XmlWriter.Utility
             public string XmlTagName { get; set; }
             public string ClassName { get; set; }
             public bool IsRoot { get; set; } = false;
+            // 親からこのノードが List<T> として参照される場合に true（別テーブル参照の配列など）。
+            public bool IsCollection { get; set; } = false;
             public List<PropertyNode> Properties { get; set; } = new List<PropertyNode>();
             public List<ClassNode> Children { get; set; } = new List<ClassNode>();
+            // プロパティ・子クラスを列の出現順で保持するための統合リスト。
+            public List<Member> Members { get; set; } = new List<Member>();
             public ClassNode(string xmlTagName, string className) { XmlTagName = xmlTagName; ClassName = className; }
-            public void AddPath(string[] parts, string typeName, bool isArray, string parentPrefix)
-            {
-                if (parts.Length == 1)
-                {
-                    Properties.Add(new PropertyNode { Name = parts[0], TypeName = typeName, IsArray = isArray });
-                    return;
-                }
-                string currentPartName = parts[0];
-                var child = Children.FirstOrDefault(c => c.XmlTagName == currentPartName);
-                if (child == null)
-                {
-                    string uniqueClassName = $"{parentPrefix}_{currentPartName}";
-                    child = new ClassNode(currentPartName, uniqueClassName);
-                    Children.Add(child);
-                }
-                child.AddPath(parts.Skip(1).ToArray(), typeName, isArray, child.ClassName);
-            }
             public List<ClassNode> GetAllNodes()
             {
                 var list = new List<ClassNode> { this };
                 foreach (var child in Children) list.AddRange(child.GetAllNodes());
                 return list;
             }
+        }
+
+        // クラス内メンバ（スカラ/配列プロパティ または 子クラス参照）を出現順で表す。
+        public class Member
+        {
+            public PropertyNode Property { get; set; }
+            public ClassNode Child { get; set; }
+            public bool IsChild => Child != null;
         }
 
         public class PropertyNode
