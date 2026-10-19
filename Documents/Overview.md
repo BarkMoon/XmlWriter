@@ -30,7 +30,7 @@ PropertyPath:Type
 
 ### 配列 (リスト)
 型名の末尾に `[]` を付けることで、そのカラムを配列として扱います。
-Excelのセル内では、値以外の区切り文字（カンマ `,` 等）で複数の値を記述します。
+Excelのセル内では、カンマ `,` 区切りで複数の値を記述します（空要素は除去されます）。
 
 *   例: `Tags:string[]`
 *   セル値: `Fire, Magic, Rare` -> `<Tags>Fire</Tags><Tags>Magic</Tags>...`
@@ -46,9 +46,11 @@ C#クラス生成時には、指定されたテンプレートファイル(`.cs`
 | :--- | :--- |
 | `@TableName` | 現在処理中のテーブル名（ルートクラス名） |
 | `@GeneratedDate` | 生成日時 |
-| `@SubClassName` | ネストされたサブクラス（タグ）の名前 |
-| `@SubClassPropertyName` | クラス内のプロパティ名 |
-| `@SubClassTagName` | XML上でのタグ名 |
+| `@RootProperties` | ルートクラス直下のプロパティ定義（自動生成）に展開 |
+| `@SubClassName` | ネストされたサブクラスのC#クラス名（親連結の一意名。例: `CardData_Status`） |
+| `@SubClassTagName` | そのサブクラスの元のXMLタグ名（例: `Status`） |
+| `@SubClassPropertyName` | サブクラス内のプロパティ名 |
+| `@SubClassPropertyType` | サブクラス内プロパティのC#型（プリミティブ変換・配列は `List<T>`） |
 
 ### マクロ制御 (Control Flow)
 
@@ -77,8 +79,8 @@ C#クラス生成時には、指定されたテンプレートファイル(`.cs`
 ## 3. 出力ファイル
 
 ### XMLデータ
-*   テーブルの各行が1つのXMLファイルになります。
-*   ID列がある場合、ファイル名にIDが付与されます（6桁ゼロ埋め）。
+*   テーブルの各行が1つのXMLファイル（`<TableName>/<TableName>_<ID>.xml`）になります。
+*   ファイル名の `<ID>` は `ID` 列の値を使用します（`ID` 列が無い場合は行番号）。値が数値なら6桁ゼロ埋めします。
     *   例: `Card_000001.xml`
 
 ### C#コード

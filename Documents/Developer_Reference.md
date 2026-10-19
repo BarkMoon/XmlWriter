@@ -22,26 +22,30 @@
 CLI実行時の中核ロジックを担当する静的クラスです。
 
 #### メソッド
-*   `Run(string excelPath, string outputDir, string templateFilePath)`
-    *   処理フローの制御を行います。
-    *   テンプレートファイルの読み込み、Excelワークブックのオープン(ClosedXML使用)、各テーブルごとの生成メソッド呼び出しを行います。
+*   `Run(RunOptions options)`
+    *   処理フローの制御を行います。引数は `RunOptions`（`ExcelPath` / `OutputDir` / `TemplateFilePath` / `Mode` / `TargetTableName`）にまとめて渡します。
+    *   テンプレートファイルの読み込み、Excelワークブックのオープン(ClosedXML使用)、各ワークシート内の各テーブルごとの生成メソッド呼び出しを、`Mode` に応じて振り分けます。
 
 *   `GenerateXmlFromExcel(XLWorkbook workbook, string tableName, string baseOutputDir, string excelFilePath)`
     *   指定されたテーブルのデータを読み取り、XMLファイルを生成・保存します。
     *   カラムヘッダーから `ColumnInfo` を生成し、ネスト構造(`XElement`)を構築します。
 
 *   `GenerateCSharpFromTemplate(XLWorkbook workbook, string tableName, string baseOutputDir, string template)`
-    *   指定されたテンプレート文字列とテーブル構造を使用して、C#ソースコードを生成します。
+    *   指定されたテンプレート文字列とテーブル構造を使用して、C#ソースコードを生成します（内部で `GenerateCSharpCode` を呼び出します）。
+
+*   `GenerateScriptFromData(XLWorkbook workbook, string tableName, string outputDir, string template)`
+    *   行データを `${...}` 変数として展開し、データスクリプト（`<TableName>_Data.cs`）を生成します（`DataCode` モード）。
 
 #### 内部ロジック (テンプレートエンジン)
 以下のメソッド群で独自のテンプレートマクロを処理しています。
 
 *   `ProcessTemplateMacros(...)`: `#ForAllSubClasses` ループを処理します。
 *   `ProcessInnerPropertyMacros(...)`: `#ForAllSubClassProperties` ループを処理します。
-*   `ProcessConditionals(...)`: 条件分岐(`#If`)と式マクロ(`#Eq`等)を一括処理するエントリーポイントです。
-*   `ProcessExpressionMacros(...)`: 正規表現を用いて関数マクロ(`#Eq`等)を再帰的に評価・置換します。
-*   `ProcessIfBlocks(...)`: `#If` ～ `#Endif` のブロック構造を解析し、条件に合致するテキストブロックを抽出します。
+*   `ProcessConditionals(...)`: 式マクロ(`#Eq`等)と条件分岐(`#If`)を一括処理するエントリーポイントです。
+*   `ProcessExpressionMacros(...)`: 正規表現で最内の関数マクロ(`#Eq`・`#Replace`等)を評価・置換します。変化が無くなるまで繰り返し適用することでネストを解決します。
+*   `ProcessIfBlocks(...)`: `#If` ～ `#Endif` のブロック構造を（ネストを考慮して）解析し、条件に合致するテキストブロックを抽出します。
 *   `ProcessDataMacros(...)`: `#ForAllData` ループを処理し、行データの変数(`${Id}`等)置換を行います。
+*   `ProcessEraseDuplicatedLines(...)`: `#EraseDuplicatedLine` ～ `#EndErase` ブロック内の重複行（`Trim()` 一致・空行含む）を削除します。
 
 ### 3. XmlWriter.Form1 (GUI)
 Windows Forms画面の実装クラスです。
