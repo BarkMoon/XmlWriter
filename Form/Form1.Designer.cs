@@ -44,6 +44,7 @@
             this.btnGenerateClass = new System.Windows.Forms.Button();
             // Start Add
             this.btnGenerateScriptFromData = new System.Windows.Forms.Button();
+            this.chkAppendDataSuffix = new System.Windows.Forms.CheckBox();
             // End Add
             this.SuspendLayout();
             // 
@@ -106,7 +107,7 @@
             // 
             this.lblStatus.AutoSize = true;
             this.lblStatus.ForeColor = System.Drawing.Color.Gray;
-            this.lblStatus.Location = new System.Drawing.Point(26, 350); // 位置調整
+            this.lblStatus.Location = new System.Drawing.Point(26, 392); // 位置調整
             this.lblStatus.Name = "lblStatus";
             this.lblStatus.Size = new System.Drawing.Size(53, 12);
             this.lblStatus.TabIndex = 9; // Index調整
@@ -148,13 +149,24 @@
             this.btnGenerateClass.Text = "C#クラス定義の生成 (.cs)";
             this.btnGenerateClass.UseVisualStyleBackColor = true;
             this.btnGenerateClass.Click += new System.EventHandler(this.btnGenerateClass_Click);
-            // 
+            //
+            // chkAppendDataSuffix
+            //
+            this.chkAppendDataSuffix.AutoSize = true;
+            this.chkAppendDataSuffix.Checked = false;
+            this.chkAppendDataSuffix.Location = new System.Drawing.Point(26, 316);
+            this.chkAppendDataSuffix.Name = "chkAppendDataSuffix";
+            this.chkAppendDataSuffix.Size = new System.Drawing.Size(220, 16);
+            this.chkAppendDataSuffix.TabIndex = 10;
+            this.chkAppendDataSuffix.Text = "出力ファイル名に「_Data」を付ける";
+            this.chkAppendDataSuffix.UseVisualStyleBackColor = true;
+            //
             // btnGenerateScriptFromData
-            // 
-            this.btnGenerateScriptFromData.Location = new System.Drawing.Point(26, 310); // Offset Y
+            //
+            this.btnGenerateScriptFromData.Location = new System.Drawing.Point(26, 340); // Offset Y
             this.btnGenerateScriptFromData.Name = "btnGenerateScriptFromData";
             this.btnGenerateScriptFromData.Size = new System.Drawing.Size(439, 40);
-            this.btnGenerateScriptFromData.TabIndex = 10;
+            this.btnGenerateScriptFromData.TabIndex = 11;
             this.btnGenerateScriptFromData.Text = "データからスクリプトを作成";
             this.btnGenerateScriptFromData.UseVisualStyleBackColor = true;
             this.btnGenerateScriptFromData.Click += new System.EventHandler(this.btnGenerateScriptFromData_Click);
@@ -163,7 +175,8 @@
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 12F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(500, 380); // 高さを拡張
+            this.ClientSize = new System.Drawing.Size(500, 420); // 高さを拡張
+            this.Controls.Add(this.chkAppendDataSuffix);
             this.Controls.Add(this.btnGenerateScriptFromData); // Add this
             this.Controls.Add(this.btnGenerateClass);
             this.Controls.Add(this.btnBrowseTemplate);
@@ -200,5 +213,7 @@
         private System.Windows.Forms.Button btnGenerateClass;
         // 新規追加
         private System.Windows.Forms.Button btnGenerateScriptFromData;
+        // 新規追加: データスクリプトの既定ファイル名に「_Data」を付けるか
+        private System.Windows.Forms.CheckBox chkAppendDataSuffix;
     }
 }

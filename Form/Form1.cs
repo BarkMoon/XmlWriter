@@ -276,7 +276,8 @@ namespace XmlWriter
             using (SaveFileDialog sfd = new SaveFileDialog())
             {
                 sfd.Title = "保存ファイル名を指定してください";
-                sfd.FileName = $"{tableName}_Data.cs";
+                // チェックボックスがONの時のみ既定ファイル名に「_Data」を付ける（デフォルトOFF）。
+                sfd.FileName = chkAppendDataSuffix.Checked ? $"{tableName}_Data.cs" : $"{tableName}.cs";
                 sfd.Filter = "C# File|*.cs|All Files|*.*";
                 
                 string lastFolder = ini.Read("LastScriptOutputFolder");
