@@ -33,6 +33,7 @@
             this.btnBrowse = new System.Windows.Forms.Button();
             this.lblSheetName = new System.Windows.Forms.Label();
             this.cmbSheetName = new System.Windows.Forms.ComboBox();
+            this.btnReload = new System.Windows.Forms.Button();
             this.btnGenerate = new System.Windows.Forms.Button();
             this.lblStatus = new System.Windows.Forms.Label();
 
@@ -92,9 +93,19 @@
             this.cmbSheetName.Name = "cmbSheetName";
             this.cmbSheetName.Size = new System.Drawing.Size(200, 20);
             this.cmbSheetName.TabIndex = 4;
-            // 
+            //
+            // btnReload
+            //
+            this.btnReload.Location = new System.Drawing.Point(236, 113);
+            this.btnReload.Name = "btnReload";
+            this.btnReload.Size = new System.Drawing.Size(90, 23);
+            this.btnReload.TabIndex = 5;
+            this.btnReload.Text = "リロード";
+            this.btnReload.UseVisualStyleBackColor = true;
+            this.btnReload.Click += new System.EventHandler(this.btnReload_Click);
+            //
             // btnGenerate
-            // 
+            //
             this.btnGenerate.Location = new System.Drawing.Point(26, 150);
             this.btnGenerate.Name = "btnGenerate";
             this.btnGenerate.Size = new System.Drawing.Size(439, 40);
@@ -184,6 +195,7 @@
             this.Controls.Add(this.lblTemplate);
             this.Controls.Add(this.lblStatus);
             this.Controls.Add(this.btnGenerate);
+            this.Controls.Add(this.btnReload);
             this.Controls.Add(this.cmbSheetName);
             this.Controls.Add(this.lblSheetName);
             this.Controls.Add(this.btnBrowse);
@@ -204,6 +216,7 @@
         private System.Windows.Forms.Button btnBrowse;
         private System.Windows.Forms.Label lblSheetName;
         private System.Windows.Forms.ComboBox cmbSheetName;
+        private System.Windows.Forms.Button btnReload;
         private System.Windows.Forms.Button btnGenerate;
         private System.Windows.Forms.Label lblStatus;
         // 新規追加

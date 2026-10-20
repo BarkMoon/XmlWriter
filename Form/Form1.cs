@@ -60,6 +60,9 @@ namespace XmlWriter
 
         private void LoadTableNames(string filePath)
         {
+            // リロード時に選択を維持できるよう、現在の選択を控えておく。
+            string previous = cmbSheetName.SelectedItem?.ToString();
+
             cmbSheetName.Items.Clear();
             cmbSheetName.Enabled = false;
             try
@@ -70,12 +73,55 @@ namespace XmlWriter
                     foreach (var ws in workbook.Worksheets)
                         foreach (var tbl in ws.Tables) cmbSheetName.Items.Add(tbl.Name);
                 }
-                if (cmbSheetName.Items.Count > 0) { cmbSheetName.SelectedIndex = 0; cmbSheetName.Enabled = true; }
+                if (cmbSheetName.Items.Count > 0)
+                {
+                    cmbSheetName.Enabled = true;
+                    // 以前の選択が残っていればそれを、無ければ先頭を選択する。
+                    int idx = previous != null ? cmbSheetName.Items.IndexOf(previous) : -1;
+                    cmbSheetName.SelectedIndex = idx >= 0 ? idx : 0;
+                }
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"読み込みエラー: {ex.Message}\n(パス: {filePath})", "エラー");
             }
+        }
+
+        // --- テーブル一覧の再取得（リロード） ---
+        private void btnReload_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(txtFilePath.Text))
+            {
+                MessageBox.Show("先にExcelファイルを選択してください。");
+                return;
+            }
+            if (!File.Exists(txtFilePath.Text))
+            {
+                MessageBox.Show($"ファイルが見つかりません。\nパス: {txtFilePath.Text}", "エラー");
+                return;
+            }
+            LoadTableNames(txtFilePath.Text);
+            UpdateStatus("テーブル一覧を再取得しました");
+        }
+
+        /// <summary>
+        /// 選択中のテーブルがワークブックに存在しなければ警告を出し true を返す。
+        /// （Excel側で削除・改名された状態で生成しようとした場合の保護）
+        /// </summary>
+        private bool WarnIfTableMissing(string filePath, string tableName)
+        {
+            using (var workbook = XmlWriter.Utility.CommandRunner.OpenWorkbookReadOnly(filePath))
+            {
+                if (!XmlWriter.Utility.CommandRunner.TableExists(workbook, tableName))
+                {
+                    MessageBox.Show(
+                        $"テーブル「{tableName}」が見つかりません。\n" +
+                        "Excel側で削除・改名された可能性があります。「リロード」でテーブル一覧を更新してください。",
+                        "警告", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return true;
+                }
+            }
+            return false;
         }
 
         // --- XML生成 ---
@@ -84,6 +130,10 @@ namespace XmlWriter
             if (string.IsNullOrEmpty(txtFilePath.Text) || cmbSheetName.SelectedItem == null) return;
 
             string tableName = cmbSheetName.SelectedItem.ToString();
+
+            // 生成前にテーブルの存在を確認（Excel側で削除/改名された場合は警告して中止）
+            if (WarnIfTableMissing(txtFilePath.Text, tableName)) return;
+
             string outputDir = null;
 
             // ★修正: ユーザー要望により SaveFileDialog を使用してフォルダを選択させる
@@ -181,6 +231,10 @@ namespace XmlWriter
             }
 
             string tableName = cmbSheetName.SelectedItem.ToString();
+
+            // 生成前にテーブルの存在を確認（Excel側で削除/改名された場合は警告して中止）
+            if (WarnIfTableMissing(txtFilePath.Text, tableName)) return;
+
             string templatePath;
 
             // ★ テンプレートパスの決定
@@ -253,7 +307,10 @@ namespace XmlWriter
         {
             if (string.IsNullOrEmpty(txtFilePath.Text) || cmbSheetName.SelectedItem == null) return;
             string tableName = cmbSheetName.SelectedItem.ToString();
-            
+
+            // 生成前にテーブルの存在を確認（Excel側で削除/改名された場合は警告して中止）
+            if (WarnIfTableMissing(txtFilePath.Text, tableName)) return;
+
             // 1. テンプレートファイルを選択 (共通ロジック)
             string templatePath;
             if (!string.IsNullOrEmpty(txtTemplatePath.Text))

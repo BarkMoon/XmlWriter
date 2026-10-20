@@ -189,8 +189,34 @@ namespace XmlWriter.Utility
 
         public static XLWorkbook OpenWorkbookReadOnly(string path)
         {
-            FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            return new XLWorkbook(fs);
+            // ファイル全体をメモリに読み込んでからワークブックを構築し、ファイルハンドルを保持しない。
+            // これにより XmlWriter で開いている間も、Excel 側での編集・保存（元ファイルの置換）が
+            // 共有違反にならない。読み取りは FileShare.ReadWrite | Delete で、Excel が開いていても取得する。
+            MemoryStream ms = new MemoryStream();
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            {
+                fs.CopyTo(ms);
+            }
+            ms.Position = 0;
+            return new XLWorkbook(ms);
+        }
+
+        /// <summary>
+        /// 指定したテーブルがワークブック内に存在するかを返す。
+        /// </summary>
+        public static bool TableExists(XLWorkbook workbook, string tableName)
+        {
+            foreach (var ws in workbook.Worksheets)
+            {
+                foreach (var tbl in ws.Tables)
+                {
+                    if (string.Equals(tbl.Name, tableName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         private static Dictionary<string, List<ColumnInfo>> _headerCache = new Dictionary<string, List<ColumnInfo>>();

@@ -47,16 +47,22 @@ CLI実行時の中核ロジックを担当する静的クラスです。
 *   `ProcessDataMacros(...)`: `#ForAllData` ループを処理し、行データの変数(`${Id}`等)置換を行います。
 *   `ProcessEraseDuplicatedLines(...)`: `#EraseDuplicatedLine` ～ `#EndErase` ブロック内の重複行（`Trim()` 一致・空行含む）を削除します。
 
+#### その他のユーティリティ
+*   `OpenWorkbookReadOnly(path)`: **ファイル全体をメモリ(`MemoryStream`)へ読み込んでから `XLWorkbook` を構築し、ファイルハンドルを保持しません。** これにより XmlWriter で開いている間も Excel 側での編集・保存（元ファイルの置換）が共有違反になりません。読み取りは `FileShare.ReadWrite | Delete` で行います。
+*   `TableExists(workbook, tableName)`: 指定テーブルがワークブック内に存在するかを返します（生成前の存在確認に使用）。
+
 ### 3. XmlWriter.Form1 (GUI)
 Windows Forms画面の実装クラスです。
 ※ 以前は `CommandRunner` と `Form1` で処理が重複していましたが、リファクタリングにより主要なビジネスロジックは `CommandRunner` に集約されました。`Form1` はUI操作のみを担当し、実際の処理は `CommandRunner` に委譲しています。
 
 #### 主なイベントハンドラ
 *   `btnBrowse_Click`: Excelファイルの選択。INIから前回のフォルダパスを復元します。
+*   `btnReload_Click`: 開いているExcelのテーブル一覧を再取得します（`LoadTableNames`）。選択中のテーブル名が再取得後も存在すればその選択を維持します。
 *   `btnGenerate_Click`: XML生成の実行。
     *   フォルダ選択には標準の `FolderBrowserDialog` ではなく、Vistaスタイル（エクスプローラー形式）のUIを提供するため、`SaveFileDialog` をフォルダ選択モード風に流用する実装を行っています。ユーザーにはダミーファイル名の保存を促すことでフォルダパスを取得します。
 *   `btnGenerateClass_Click`: C#クラス生成の実行。
-*   `btnGenerateScriptFromData_Click`: データからのスクリプト生成実行。`SaveFileDialog` で出力先フォルダを選択し、`GenerateScriptFromData` を呼び出します。
+*   `btnGenerateScriptFromData_Click`: データからのスクリプト生成実行。`SaveFileDialog` で出力先フォルダを選択し、`GenerateScriptFromData` を呼び出します。チェックボックス `chkAppendDataSuffix`（既定OFF）がONのときのみ既定ファイル名に `_Data` を付けます。
+*   いずれの生成ハンドラも、実行前に `WarnIfTableMissing` で選択テーブルの存在を確認し、Excel側で削除・改名されていた場合は警告を出して中止します（「リロード」で一覧更新を促します）。
 
 ## 依存ライブラリ
 
